@@ -1,12 +1,16 @@
 import { ActionIcon } from '@lobehub/ui';
 import isEqual from 'fast-deep-equal';
 import { PackageSearch } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import DevModal from '@/features/PluginDevModal';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
+
+const DevModal = dynamic(() => import('@/features/PluginDevModal'), {
+  ssr: false,
+});
 
 const EditCustomPlugin = memo<{ identifier: string }>(({ identifier }) => {
   const { t } = useTranslation('plugin');

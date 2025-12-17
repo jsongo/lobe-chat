@@ -334,6 +334,138 @@ const nextConfig: NextConfig = {
       });
     }
 
+    // Optimize bundle splitting to reduce number of small chunks
+    // This improves loading performance by creating larger, more cache-friendly chunks
+    config.optimization = {
+      ...config.optimization,
+      // Use deterministic module IDs for better long-term caching
+      moduleIds: 'deterministic',
+
+      // 合并运行时代码到 main chunk，减少额外请求
+      runtimeChunk: false,
+
+      splitChunks: {
+        cacheGroups: {
+          // Application common code
+          'default': {
+            minChunks: 2,
+            minSize: 30_000,
+            priority: -20,
+            reuseExistingChunk: true, // 30KB minimum
+          },
+
+          // Separate framework code (React, React-DOM) for better caching
+          'framework': {
+            enforce: true,
+            name: 'framework',
+            priority: 40,
+            test: /[/\\]node_modules[/\\](react|react-dom|scheduler)[/\\]/,
+          },
+
+          // Common vendor code - split aggressively
+          'vendor': {
+            // 30KB minimum
+            maxSize: 2_048_000,
+
+            minChunks: 1,
+
+            minSize: 30_000,
+
+            name: 'vendor-common',
+
+            priority: 10,
+            // 2MB maximum - will split into multiple chunks
+            reuseExistingChunk: true,
+            test: /[/\\]node_modules[/\\]/,
+          },
+
+          // AI/LLM related libraries
+          'vendor-ai': {
+            enforce: true,
+            name: 'vendor-ai',
+            priority: 25,
+            test: /[/\\]node_modules[/\\](langchain|@langchain|openai|@anthropic-ai)[/\\]/,
+          },
+
+          // Database and data libraries
+          'vendor-db': {
+            enforce: true,
+            name: 'vendor-db',
+            priority: 20,
+            test: /[/\\]node_modules[/\\](drizzle-orm|@electric-sql|pg|postgres|zod)[/\\]/,
+          },
+
+          // Form and validation libraries
+          'vendor-form': {
+            enforce: true,
+            name: 'vendor-form',
+            priority: 20,
+            test: /[/\\]node_modules[/\\](react-hook-form|yup|validator)[/\\]/,
+          },
+
+          // i18n and localization
+          'vendor-i18n': {
+            enforce: true,
+            name: 'vendor-i18n',
+            priority: 20,
+            test: /[/\\]node_modules[/\\](react-i18next|i18next|@formatjs)[/\\]/,
+          },
+
+          // Icons
+          'vendor-icons': {
+            enforce: true,
+            name: 'vendor-icons',
+            priority: 20,
+            test: /[/\\]node_modules[/\\](lucide-react|@lobehub\/icons|@icons-pack)[/\\]/,
+          },
+
+          // Code highlighting and rendering
+          'vendor-render': {
+            enforce: true,
+            name: 'vendor-render',
+            priority: 25,
+            test: /[/\\]node_modules[/\\](shiki|marked|react-markdown|remark|rehype|mdast|unified)[/\\]/,
+          },
+
+          // Routing and navigation
+          'vendor-router': {
+            enforce: true,
+            name: 'vendor-router',
+            priority: 20,
+            test: /[/\\]node_modules[/\\](react-router|react-router-dom|history)[/\\]/,
+          },
+
+          // Large UI libraries - split into separate chunks
+          'vendor-ui': {
+            enforce: true,
+            maxSize: 2_048_000,
+            name: 'vendor-ui',
+            priority: 30,
+            test: /[/\\]node_modules[/\\](@lobehub\/ui|antd|@ant-design|antd-style|@emotion|rc-)[/\\]/, // 2MB
+          },
+
+          // Large utility libraries
+          'vendor-utils': {
+            enforce: true,
+            name: 'vendor-utils',
+            priority: 25,
+            test: /[/\\]node_modules[/\\](lodash-es|dayjs|framer-motion|react-layout-kit|immer|zustand|swr)[/\\]/,
+          },
+        },
+
+        chunks: 'all',
+
+        // 2MB - split chunks larger than 2MB
+        maxAsyncRequests: 10,
+
+        maxInitialRequests: 8,
+
+        // 40KB
+        maxSize: 2_048_000,
+        // Keep minSize reasonable to avoid too many tiny chunks
+        minSize: 40_000,
+      },
+    };
     return config;
   },
 };

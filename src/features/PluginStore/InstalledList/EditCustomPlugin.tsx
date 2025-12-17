@@ -1,9 +1,13 @@
 import isEqual from 'fast-deep-equal';
+import dynamic from 'next/dynamic';
 import { ReactNode, memo } from 'react';
 
-import DevModal from '@/features/PluginDevModal';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
+
+const DevModal = dynamic(() => import('@/features/PluginDevModal'), {
+  ssr: false,
+});
 
 interface EditCustomPluginProps {
   children: ReactNode;

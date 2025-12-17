@@ -2,7 +2,7 @@
 
 import { enableNextAuth } from '@lobechat/const';
 import { useRouter } from 'next/navigation';
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createStoreUpdater } from 'zustand-utils';
 
@@ -27,19 +27,13 @@ const StoreInitialization = memo(() => {
   initAgentPinnedFromUrl();
 
   const router = useRouter();
-  const [isLogin, isSignedIn, useInitUserState] = useUserStore((s) => [
-    authSelectors.isLogin(s),
-    s.isSignedIn,
-    s.useInitUserState,
-  ]);
+  const [isLogin, isSignedIn] = useUserStore((s) => [authSelectors.isLogin(s), s.isSignedIn]);
 
   const { serverConfig } = useServerConfigStore();
 
   const useInitSystemStatus = useGlobalStore((s) => s.useInitSystemStatus);
 
-  const useInitAgentStore = useAgentStore((s) => s.useInitInboxAgentStore);
-  const useInitAiProviderKeyVaults = useAiInfraStore((s) => s.useFetchAiProviderRuntimeState);
-
+  // ============ Critical initialization (synchronous) ============
   // init the system preference
   useInitSystemStatus();
 
@@ -52,6 +46,10 @@ const StoreInitialization = memo(() => {
   const oAuthSSOProviders = useServerConfigStore(serverConfigSelectors.oAuthSSOProviders);
   useUserStoreUpdater('oAuthSSOProviders', oAuthSSOProviders);
 
+  const useStoreUpdater = createStoreUpdater(useGlobalStore);
+  const mobile = useIsMobile();
+  useStoreUpdater('isMobile', mobile);
+
   /**
    * The store function of `isLogin` will both consider the values of `enableAuth` and `isSignedIn`.
    * But during initialization, the value of `enableAuth` might be incorrect cause of the async fetch.
@@ -61,29 +59,54 @@ const StoreInitialization = memo(() => {
    * which would cause unnecessary API requests with invalid login state.
    */
   const isLoginOnInit = Boolean(enableNextAuth ? isSignedIn : isLogin);
-
-  // init inbox agent and default agent config
-  useInitAgentStore(isLoginOnInit, serverConfig.defaultAgent?.config);
-
   const isSyncActive = useElectronStore((s) => electronSyncSelectors.isSyncActive(s));
 
-  // init user provider key vaults
-  useInitAiProviderKeyVaults(isLoginOnInit, isSyncActive);
+  // ============ Non-critical initialization (deferred) ============
+  // Track whether non-critical initialization should proceed
+  const [shouldInitNonCritical, setShouldInitNonCritical] = useState(false);
+  const nonCriticalInitScheduled = useRef(false);
 
-  // init user state
-  useInitUserState(isLoginOnInit, serverConfig, {
+  useEffect(() => {
+    if (nonCriticalInitScheduled.current) return;
+    nonCriticalInitScheduled.current = true;
+
+    // Delay non-critical store initialization to avoid blocking main thread
+    const scheduleNonCriticalInit = () => {
+      console.debug('⏰ Store: Scheduling non-critical stores initialization...');
+      setShouldInitNonCritical(true);
+      console.debug('✨ Store: Non-critical stores initialization enabled');
+    };
+
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(scheduleNonCriticalInit, { timeout: 2000 });
+    } else {
+      setTimeout(scheduleNonCriticalInit, 500);
+    }
+  }, []);
+
+  // These hooks need to be called unconditionally due to React rules
+  // But we control whether they actually execute by passing conditional parameters
+  const useInitAgentStore = useAgentStore((s) => s.useInitInboxAgentStore);
+  const useInitAiProviderKeyVaults = useAiInfraStore((s) => s.useFetchAiProviderRuntimeState);
+  const useInitUserState = useUserStore((s) => s.useInitUserState);
+
+  // Only pass parameters to trigger initialization after delay
+  useInitAgentStore(
+    shouldInitNonCritical ? isLoginOnInit : false,
+    shouldInitNonCritical ? serverConfig.defaultAgent?.config : undefined,
+  );
+  useInitAiProviderKeyVaults(
+    shouldInitNonCritical ? isLoginOnInit : false,
+    shouldInitNonCritical ? isSyncActive : false,
+  );
+  useInitUserState(shouldInitNonCritical ? isLoginOnInit : false, serverConfig, {
     onSuccess: (state) => {
       if (state.isOnboard === false) {
         router.push('/onboard');
       }
     },
   });
-
-  const useStoreUpdater = createStoreUpdater(useGlobalStore);
-
-  const mobile = useIsMobile();
-
-  useStoreUpdater('isMobile', mobile);
 
   return null;
 });

@@ -1,11 +1,15 @@
 import { Button } from '@lobehub/ui';
 import { PackagePlus } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { forwardRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import DevModal from '@/features/PluginDevModal';
 import { useAgentStore } from '@/store/agent';
 import { useToolStore } from '@/store/tool';
+
+const DevModal = dynamic(() => import('@/features/PluginDevModal'), {
+  ssr: false,
+});
 
 const AddPluginButton = forwardRef<HTMLButtonElement>((props, ref) => {
   const { t } = useTranslation('setting');

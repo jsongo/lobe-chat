@@ -1,6 +1,7 @@
 import { AssistantContentBlock, UIChatMessage } from '@lobechat/types';
 import { ActionIconGroup, type ActionIconGroupEvent, ActionIconGroupItemType } from '@lobehub/ui';
 import { App } from 'antd';
+import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import { memo, use, useCallback, useContext, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,10 +11,13 @@ import { messageStateSelectors, threadSelectors } from '@/store/chat/selectors';
 import { useSessionStore } from '@/store/session';
 import { sessionSelectors } from '@/store/session/selectors';
 
-import ShareMessageModal from '../../../components/ShareMessageModal';
 import { VirtuaContext } from '../../../components/VirtualizedList/VirtuosoContext';
 import { InPortalThreadContext } from '../../../context/InPortalThreadContext';
 import { useChatListActionsBar } from '../../../hooks/useChatListActionsBar';
+
+const ShareMessageModal = dynamic(() => import('../../../components/ShareMessageModal'), {
+  ssr: false,
+});
 
 interface GroupActionsProps {
   contentBlock?: AssistantContentBlock;
