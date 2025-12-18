@@ -54,6 +54,8 @@ jobs:
         env:
           # Use a dummy secret for build (must be at least 32 chars for BetterAuth)
           AUTH_SECRET: "ci-build-time-secret-12345678901234567890123456789012"
+          # Database encryption key (must be at least 32 chars)
+          KEY_VAULTS_SECRET: "ci-build-key-vaults-secret-1234567890123456789012345678"
           NEXT_PUBLIC_AUTH_URL: "http://localhost:3210"
           NEXT_PUBLIC_ENABLE_CLERK_AUTH: "0"
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ""
