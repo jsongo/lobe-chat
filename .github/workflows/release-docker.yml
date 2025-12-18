@@ -56,6 +56,10 @@ jobs:
           AUTH_SECRET: "ci-build-time-secret-12345678901234567890123456789012"
           # Database encryption key (must be at least 32 chars)
           KEY_VAULTS_SECRET: "ci-build-key-vaults-secret-1234567890123456789012345678"
+          # Database configuration (dummy values for build)
+          DATABASE_DRIVER: "node"
+          DATABASE_URL: "postgres://postgres:password@localhost:5432/postgres"
+          APP_URL: "http://localhost:3210"
           NEXT_PUBLIC_AUTH_URL: "http://localhost:3210"
           NEXT_PUBLIC_ENABLE_CLERK_AUTH: "0"
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ""
