@@ -65,7 +65,9 @@ RUN <<EOF
 set -e
 addgroup -S -g 1001 nodejs
 adduser -D -G nodejs -H -S -h /app -u 1001 nextjs
-chown -R nextjs:nodejs /app /etc/proxychains4.conf
+chown -R nextjs:nodejs /app
+# Only chown proxychains config if it exists
+[ -f /etc/proxychains4.conf ] && chown nextjs:nodejs /etc/proxychains4.conf || true
 EOF
 
 ## Production image, copy all the files and run next
