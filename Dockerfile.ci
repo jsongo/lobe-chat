@@ -28,49 +28,37 @@ cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.
 rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
-# Create user and group in base stage (Debian)
+# Create user info files
 RUN <<EOF
 set -e
 groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
-## Preparation stage to set up /app with correct permissions
-FROM node:${NODEJS_VERSION}-slim AS builder
-
-WORKDIR /app
-
-# Copy user info from base
-COPY --from=base /etc/passwd /etc/passwd
-COPY --from=base /etc/group /etc/group
-
-# Copy artifacts from build context
-COPY .next/standalone /app/
-COPY node_modules/.pnpm /app/node_modules/.pnpm
-COPY node_modules/pg /app/node_modules/pg
-COPY node_modules/drizzle-orm /app/node_modules/drizzle-orm
-COPY packages/database/migrations /app/migrations
-COPY scripts/migrateServerDB/docker.cjs /app/docker.cjs
-COPY scripts/migrateServerDB/errorHint.js /app/errorHint.js
-COPY scripts/serverLauncher/startServer.js /app/startServer.js
-
-# Set ownership in Debian environment which is more robust
-RUN chown -R 1001:1001 /app
-
 ## Application image assembly
 FROM busybox:latest AS app
+
+WORKDIR /app
 
 # Copy distroless base from base stage
 COPY --from=base /distroless/ /
 
-# Copy the entire /app directory from builder, PRESERVING permissions
-COPY --from=builder --chown=1001:1001 /app /app
+# Copy artifacts from build context, SETTING OWNERSHIP DURING COPY
+# This avoids expensive recursive chown on thousands of files
+COPY --chown=1001:1001 .next/standalone /app/
+COPY --chown=1001:1001 node_modules/.pnpm /app/node_modules/.pnpm
+COPY --chown=1001:1001 node_modules/pg /app/node_modules/pg
+COPY --chown=1001:1001 node_modules/drizzle-orm /app/node_modules/drizzle-orm
+COPY --chown=1001:1001 packages/database/migrations /app/migrations
+COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
+COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
+COPY --chown=1001:1001 scripts/serverLauncher/startServer.js /app/startServer.js
 
 # Copy user info for the final image
 COPY --from=base /etc/passwd /etc/passwd
 COPY --from=base /etc/group /etc/group
 
-# Ensure proxychains config ownership
+# Ensure proxychains config ownership (flat file, fast)
 RUN [ -f /etc/proxychains4.conf ] && chown 1001:1001 /etc/proxychains4.conf || true
 
 ## Final production image
