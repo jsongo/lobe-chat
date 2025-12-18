@@ -8,7 +8,7 @@ ARG USE_CN_MIRROR
 
 ENV DEBIAN_FRONTEND="noninteractive"
 
-RUN <<'EOF'
+RUN <<EOF
 set -e
 if [ "${USE_CN_MIRROR:-false}" = "true" ]; then
     sed -i "s/deb.debian.org/mirrors.ustc.edu.cn/g" "/etc/apt/sources.list.d/debian.sources"
@@ -27,222 +27,71 @@ cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.
 rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
-FROM base AS scaffold
-WORKDIR /app
-COPY . .
-RUN <<'EOF'
-set -e
-# Keep only package management files, delete everything else
-find . -mindepth 1 -maxdepth 1 ! -name "package.json" ! -name "pnpm-workspace.yaml" ! -name ".npmrc" ! -name "packages" ! -name "apps" ! -name "node_modules" -exec rm -rf {} + || true
-# In packages and apps, keep only package.json files
-find packages -mindepth 2 -type f ! -name "package.json" -delete || true
-find packages -mindepth 2 -type d -empty -delete || true
-find apps -mindepth 2 -type f ! -name "package.json" -delete 2>/dev/null || true
-find apps -mindepth 2 -type d -empty -delete 2>/dev/null || true
-EOF
-
-## Builder image, install all the dependencies and build the app
-FROM base AS builder
-
-ARG USE_CN_MIRROR
-ARG NEXT_PUBLIC_BASE_PATH
-ARG NEXT_PUBLIC_ENABLE_BETTER_AUTH
-ARG NEXT_PUBLIC_ENABLE_NEXT_AUTH
-ARG NEXT_PUBLIC_ENABLE_CLERK_AUTH
-ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-ARG NEXT_PUBLIC_SENTRY_DSN
-ARG NEXT_PUBLIC_ANALYTICS_POSTHOG
-ARG NEXT_PUBLIC_POSTHOG_HOST
-ARG NEXT_PUBLIC_POSTHOG_KEY
-ARG NEXT_PUBLIC_ANALYTICS_UMAMI
-ARG NEXT_PUBLIC_UMAMI_SCRIPT_URL
-ARG NEXT_PUBLIC_UMAMI_WEBSITE_ID
-ARG FEATURE_FLAGS
-ARG NODE_MAX_OLD_SPACE_SIZE="10240"
-
-ENV NEXT_PUBLIC_BASE_PATH="${NEXT_PUBLIC_BASE_PATH}" \
-    FEATURE_FLAGS="${FEATURE_FLAGS}"
-
-ENV NEXT_PUBLIC_ENABLE_BETTER_AUTH="${NEXT_PUBLIC_ENABLE_BETTER_AUTH:-0}" \
-    NEXT_PUBLIC_ENABLE_NEXT_AUTH="${NEXT_PUBLIC_ENABLE_NEXT_AUTH:-1}" \
-    NEXT_PUBLIC_ENABLE_CLERK_AUTH="${NEXT_PUBLIC_ENABLE_CLERK_AUTH:-0}" \
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}" \
-    CLERK_WEBHOOK_SECRET="whsec_xxx" \
-    APP_URL="http://app.com" \
-    DATABASE_DRIVER="node" \
-    DATABASE_URL="postgres://postgres:password@localhost:5432/postgres" \
-    KEY_VAULTS_SECRET="use-for-build" \
-    # Better Auth secret for build - prevents default secret warning (must be >= 32 chars)
-    AUTH_SECRET="build-time-secret-for-nextjs-standalone-mode-complete-32chars"
-
-# Sentry
-ENV NEXT_PUBLIC_SENTRY_DSN="${NEXT_PUBLIC_SENTRY_DSN}" \
-    SENTRY_ORG="" \
-    SENTRY_PROJECT=""
-
-# Posthog
-ENV NEXT_PUBLIC_ANALYTICS_POSTHOG="${NEXT_PUBLIC_ANALYTICS_POSTHOG}" \
-    NEXT_PUBLIC_POSTHOG_HOST="${NEXT_PUBLIC_POSTHOG_HOST}" \
-    NEXT_PUBLIC_POSTHOG_KEY="${NEXT_PUBLIC_POSTHOG_KEY}"
-
-# Umami
-ENV NEXT_PUBLIC_ANALYTICS_UMAMI="${NEXT_PUBLIC_ANALYTICS_UMAMI}" \
-    NEXT_PUBLIC_UMAMI_SCRIPT_URL="${NEXT_PUBLIC_UMAMI_SCRIPT_URL}" \
-    NEXT_PUBLIC_UMAMI_WEBSITE_ID="${NEXT_PUBLIC_UMAMI_WEBSITE_ID}"
-
-# Node
-ENV NODE_OPTIONS="--max-old-space-size=${NODE_MAX_OLD_SPACE_SIZE}"
-
-WORKDIR /app
-
-COPY --from=scaffold /app /app
-
-RUN <<'EOF'
-set -e
-if [ "${USE_CN_MIRROR:-false}" = "true" ]; then
-    export SENTRYCLI_CDNURL="https://npmmirror.com/mirrors/sentry-cli"
-    npm config set registry "https://registry.npmmirror.com/"
-    echo 'canvas_binary_host_mirror=https://npmmirror.com/mirrors/canvas' >> .npmrc
-fi
-export COREPACK_NPM_REGISTRY=$(npm config get registry | sed 's/\/$//')
-npm i -g corepack@latest
-corepack enable
-corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
-EOF
-
-RUN <<'EOF'
-set -e
-pnpm i
-mkdir -p /deps
-cd /deps
-pnpm init
-pnpm add pg drizzle-orm
-EOF
-
-COPY . .
-
-# run build standalone for docker version
-# Skip external API calls during build by setting offline mode
-RUN <<'EOF'
-set -e  # Exit on error, but we'll handle specific cases
-
-# Set environment variables for BetterAuth to prevent default secret warnings
-# Generate a 64-character secret (BetterAuth requires at least 32 chars)
-export AUTH_SECRET="docker-build-$(date +%s)-$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
-export NEXT_PUBLIC_AUTH_URL="http://localhost:3210"
-
-# Disable Clerk during build
-export NEXT_PUBLIC_ENABLE_CLERK_AUTH=0
-export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=""
-
-echo "Starting build:docker..."
-echo "Environment: AUTH_SECRET=${AUTH_SECRET:0:8}***"
-pnpm run build:docker
-BUILD_EXIT_CODE=$?
-
-if [ $BUILD_EXIT_CODE -ne 0 ]; then
-  echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-
-  # Debug: Show detailed information about the failure
-  echo "=== BUILD FAILURE DEBUG INFO ==="
-  echo "Current directory: $(pwd)"
-  echo "Node version: $(node --version)"
-  echo "NPM version: $(npm --version)"
-
-  echo "--- Next.js build output directory structure ---"
-  if [ -d ".next" ]; then
-    find .next -maxdepth 3 -type f -name "*.js" -o -name "*.json" 2>/dev/null | head -10
-  fi
-
-  echo "--- Checking for proxy.js specifically ---"
-  find .next -name "proxy.js" 2>/dev/null
-
-  echo "--- Checking for middleware.js ---"
-  find .next -name "middleware.js" 2>/dev/null
-
-  echo "--- Contents of .next/server directory ---"
-  ls -la .next/server/ 2>/dev/null || echo "No .next/server directory"
-
-  # More reliable workaround: regenerate proxy.js and retry
-  echo ""
-  echo "=== APPLYING WORKAROUNDS ==="
-
-  # Workaround 1: Check if we need to regenerate middleware
-  if [ ! -f ".next/server/proxy.js" ] && [ -f "src/proxy.ts" ]; then
-    echo "⚠️  proxy.js missing but src/proxy.ts exists - this indicates a Next.js build issue"
-
-    # Try to manually force middleware generation by running a simpler build first
-    echo "Attempting to generate middleware files..."
-
-    # Check if .next/standalone exists, if so the main build actually succeeded
-    if [ -d ".next/standalone" ]; then
-      echo "✓ .next/standalone exists - core build succeeded"
-
-      # Create a simple middleware.js if missing (minimal working version)
-      if [ ! -f ".next/server/middleware.js" ]; then
-        echo "Generating minimal middleware.js..."
-        cat > .next/server/middleware.js << 'MINIMAL_MW'
-          // Generated minimal middleware
-          export default function() { return undefined; }
-          export const config = { matcher: [] };
-        MINIMAL_MW
-      fi
-
-      echo "✓ Build recovered: standalone exists, middleware created"
-
-      # Run post-build tasks
-      echo "Running post-build tasks..."
-      pnpm run build-sitemap || echo "⚠️  Sitemap generation failed but continuing..."
-      pnpm run build-migrate-db || echo "⚠️  DB migration failed but continuing..."
-
-      exit 0
-    else
-      echo "❌ .next/standalone not found - complete build failure"
-      exit 1
-    fi
-  else
-    echo "Other build failure detected"
-
-    # Verify if this is truly a failure or just post-build issues
-    if [ -d ".next/standalone" ]; then
-      echo "✓ Build succeeded but post-build failed, continuing..."
-      pnpm run build-sitemap || echo "Sitemap generation failed"
-      pnpm run build-migrate-db || echo "DB migration failed"
-      exit 0
-    else
-      echo "❌ Cannot recover - no standalone output found"
-      exit 1
-    fi
-  fi
-else
-  echo "✓ Build completed successfully"
-  exit 0
-fi
-EOF
-
 ## Application image, copy all the files for production
 FROM busybox:latest AS app
 
 COPY --from=base /distroless/ /
 
+# In CI mode, we assume the artifact is already built and located in the context
+# We copy from the local context instead of a builder stage
+
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY --from=builder /app/.next/standalone /app/
+COPY .next/standalone /app/
+
+# Remove host-specific node_modules ensuring we install correct architecture deps
+RUN rm -rf /app/node_modules
+
+# Copy package management files for installing production dependencies
+COPY package.json pnpm-workspace.yaml .npmrc /app/
+# Copy patches if any
+COPY patches /app/patches/
+# Copy all package.json files from workspace
+COPY packages /app/packages/
+COPY apps /app/apps/
+
+# Install dependencies for the target architecture
+RUN <<EOF
+set -e
+# Setup pnpm
+if [ "${USE_CN_MIRROR:-false}" = "true" ]; then
+    npm config set registry "https://registry.npmmirror.com/"
+fi
+export COREPACK_NPM_REGISTRY=$(npm config get registry | sed 's/\/$//')
+npm i -g corepack@latest
+corepack enable
+corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
+
+# Install prod dependencies
+cd /app
+# We need to clean up the copied packages/apps directories to only keep package.json files
+# to match the workspace structure but not include source code,
+# essentially replicating the 'scaffold' stage logic but simpler since we already have standalone
+find packages -mindepth 2 -type f ! -name "package.json" -delete || true
+find packages -mindepth 2 -type d -empty -delete || true
+find apps -mindepth 2 -type f ! -name "package.json" -delete 2>/dev/null || true
+find apps -mindepth 2 -type d -empty -delete 2>/dev/null || true
+
+# Install dependencies
+pnpm install --prod --frozen-lockfile --ignore-scripts
+EOF
 
 # Copy database migrations
-COPY --from=builder /app/packages/database/migrations /app/migrations
-COPY --from=builder /app/scripts/migrateServerDB/docker.cjs /app/docker.cjs
-COPY --from=builder /app/scripts/migrateServerDB/errorHint.js /app/errorHint.js
-
-# copy dependencies
-COPY --from=builder /deps/node_modules/.pnpm /app/node_modules/.pnpm
-COPY --from=builder /deps/node_modules/pg /app/node_modules/pg
-COPY --from=builder /deps/node_modules/drizzle-orm /app/node_modules/drizzle-orm
+COPY packages/database/migrations /app/migrations
+COPY scripts/migrateServerDB/docker.cjs /app/docker.cjs
+COPY scripts/migrateServerDB/errorHint.js /app/errorHint.js
 
 # Copy server launcher
-COPY --from=builder /app/scripts/serverLauncher/startServer.js /app/startServer.js
+COPY scripts/serverLauncher/startServer.js /app/startServer.js
 
-RUN <<'EOF'
+# Note: In the original Dockerfile, there was a step to copy pg and drizzle-orm separately
+# COPY --from=builder /deps/node_modules/pg /app/node_modules/pg
+# COPY --from=builder /deps/node_modules/drizzle-orm /app/node_modules/drizzle-orm
+# In CI build, we need to ensure these are present in .next/standalone/node_modules
+# or we copy them from the root node_modules if standalone doesn't include them correctly.
+# Usually standalone includes what's needed, but let's be safe and allow copying extra deps if needed.
+
+RUN <<EOF
 set -e
 addgroup -S -g 1001 nodejs
 adduser -D -G nodejs -H -S -h /app -u 1001 nextjs
