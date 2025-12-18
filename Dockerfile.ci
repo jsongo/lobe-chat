@@ -35,16 +35,20 @@ groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
-## Application image assembly
-FROM busybox:latest AS app
+## Final Production Image based on busybox (very small base, ~1.2MB)
+FROM busybox:latest
 
 WORKDIR /app
 
 # Copy distroless base from base stage
 COPY --from=base /distroless/ /
 
+# Copy user info for the final image
+COPY --from=base /etc/passwd /etc/passwd
+COPY --from=base /etc/group /etc/group
+
 # Copy artifacts from build context, SETTING OWNERSHIP DURING COPY
-# This avoids expensive recursive chown on thousands of files
+# This is efficient and avoids recursive chown issues
 COPY --chown=1001:1001 .next/standalone /app/
 COPY --chown=1001:1001 node_modules/.pnpm /app/node_modules/.pnpm
 COPY --chown=1001:1001 node_modules/pg /app/node_modules/pg
@@ -54,17 +58,8 @@ COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
 COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
 COPY --chown=1001:1001 scripts/serverLauncher/startServer.js /app/startServer.js
 
-# Copy user info for the final image
-COPY --from=base /etc/passwd /etc/passwd
-COPY --from=base /etc/group /etc/group
-
-# Ensure proxychains config ownership (flat file, fast)
+# Ensure proxychains config ownership
 RUN [ -f /etc/proxychains4.conf ] && chown 1001:1001 /etc/proxychains4.conf || true
-
-## Final production image
-FROM scratch
-
-COPY --from=app / /
 
 ENV NODE_ENV="production" \
     NODE_OPTIONS="--dns-result-order=ipv4first --use-openssl-ca" \
@@ -74,6 +69,24 @@ ENV NODE_ENV="production" \
     MIDDLEWARE_REWRITE_THROUGH_LOCAL="1" \
     HOSTNAME="0.0.0.0" \
     PORT="3210"
+
+# Runtime Environment Variables from original Dockerfile
+ENV ACCESS_CODE="" \
+    APP_URL="" \
+    API_KEY_SELECT_MODE="" \
+    DEFAULT_AGENT_CONFIG="" \
+    SYSTEM_AGENT="" \
+    FEATURE_FLAGS="" \
+    PROXY_URL="" \
+    ENABLE_AUTH_PROTECTION="" \
+    KEY_VAULTS_SECRET="" \
+    DATABASE_DRIVER="node" \
+    DATABASE_URL="" \
+    AUTH_SECRET="" \
+    AUTH_SSO_PROVIDERS="" \
+    NEXT_PUBLIC_AUTH_URL="" \
+    CLERK_SECRET_KEY="" \
+    CLERK_WEBHOOK_SECRET=""
 
 # User and group IDs
 USER 1001
