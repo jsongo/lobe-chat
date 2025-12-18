@@ -27,26 +27,19 @@ cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.
 rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
-## Application image, copy all the files for production
-FROM busybox:latest AS app
+## Dependencies stage - install production dependencies with correct architecture
+FROM node:${NODEJS_VERSION}-slim AS deps
 
-COPY --from=base /distroless/ /
+ARG USE_CN_MIRROR
 
-# In CI mode, we assume the artifact is already built and located in the context
-# We copy from the local context instead of a builder stage
+WORKDIR /app
 
-# Automatically leverage output traces to reduce image size
-# https://nextjs.org/docs/advanced-features/output-file-tracing
-COPY .next/standalone /app/
-
-# Remove host-specific node_modules ensuring we install correct architecture deps
-RUN rm -rf /app/node_modules
-
-# Copy package management files for installing production dependencies
+# Copy package management files
 COPY package.json pnpm-workspace.yaml .npmrc /app/
-# Copy patches if any
+COPY pnpm-lock.yaml /app/
 COPY patches /app/patches/
-# Copy all package.json files from workspace
+
+# Copy workspace package.json files only (not source code)
 COPY packages /app/packages/
 COPY apps /app/apps/
 
@@ -62,19 +55,32 @@ npm i -g corepack@latest
 corepack enable
 corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
 
-# Install prod dependencies
-cd /app
-# We need to clean up the copied packages/apps directories to only keep package.json files
-# to match the workspace structure but not include source code,
-# essentially replicating the 'scaffold' stage logic but simpler since we already have standalone
+# Clean up copied packages/apps to keep only package.json files
 find packages -mindepth 2 -type f ! -name "package.json" -delete || true
 find packages -mindepth 2 -type d -empty -delete || true
 find apps -mindepth 2 -type f ! -name "package.json" -delete 2>/dev/null || true
 find apps -mindepth 2 -type d -empty -delete 2>/dev/null || true
 
-# Install dependencies
+# Install production dependencies
 pnpm install --prod --frozen-lockfile --ignore-scripts
 EOF
+
+## Application image, copy all the files for production
+FROM busybox:latest AS app
+
+COPY --from=base /distroless/ /
+
+# In CI mode, we assume the artifact is already built and located in the context
+# We copy from the local context instead of a builder stage
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY .next/standalone /app/
+
+# Copy production dependencies from deps stage
+COPY --from=deps /app/node_modules /app/node_modules
+COPY --from=deps /app/packages /app/packages
+COPY --from=deps /app/apps /app/apps
 
 # Copy database migrations
 COPY packages/database/migrations /app/migrations
