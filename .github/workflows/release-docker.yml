@@ -72,9 +72,9 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
-          # Create a temporary .dockerignore that allows .next folder
-          # (remove .next line from original .dockerignore)
-          grep -v "^\.next$" .dockerignore > .dockerignore.tmp
+          # Create a temporary .dockerignore that allows .next and node_modules folders
+          # (remove these lines from original .dockerignore for CI builds)
+          grep -v -E "^(\.next|node_modules)$" .dockerignore > .dockerignore.tmp
           mv .dockerignore.tmp .dockerignore
 
           # Ensure patches directory exists (even if empty) for Dockerfile.ci
