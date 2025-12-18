@@ -72,8 +72,10 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
-          # Swap dockerignore to allow .next folder
-          cp .dockerignore.ci .dockerignore
+          # Create a temporary .dockerignore that allows .next folder
+          # (remove .next line from original .dockerignore)
+          grep -v "^\.next$" .dockerignore > .dockerignore.tmp
+          mv .dockerignore.tmp .dockerignore
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
