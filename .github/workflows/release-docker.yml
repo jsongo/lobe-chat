@@ -82,10 +82,13 @@ jobs:
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
-          # IMPORTANT: Copy build-manifest.json and other metadata files missing in standalone
-          # These are often needed by dynamic routes at runtime
-          cp .next/build-manifest.json out/.next/ 2>/dev/null || true
-          cp .next/react-loadable-manifest.json out/.next/ 2>/dev/null || true
+          # IMPORTANT: Copy all manifest and metadata files missing in standalone
+          # These are essential for dynamic routing, i18n, and metadata in Next.js
+          echo "Syncing supplemental Next.js metadata..."
+          mkdir -p out/.next/server
+          cp .next/*.json out/.next/ 2>/dev/null || true
+          # Some deployments also need the server-side manifests
+          cp .next/server/*.json out/.next/server/ 2>/dev/null || true
 
           # 3. Prepare merged package.json for npm
           # We use our script to flatten and strip local workspace deps
