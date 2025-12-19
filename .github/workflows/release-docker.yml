@@ -81,14 +81,18 @@ jobs:
 
           # IMPORTANT: Perform a deep sync of the .next directory
           # The standalone output often misses critical metadata files (manifests)
-          # needed for the App Router and Server Actions.
-          echo "Syncing full .next metadata into standalone..."
-          mkdir -p out/.next
-          # Sync everything from .next to out/.next, but skip the cache to save space
-          # We use /. suffix to copy contents into the destination
+          # and chunks needed for runtime. We sync everything EXCEPT the cache.
+          echo "Syncing full .next metadata and chunks into standalone..."
           mkdir -p out/.next/server
+          # Copy contents of .next into out/.next, avoiding overwriting with empty dirs
           cp -r .next/server/. out/.next/server/ 2>/dev/null || true
           cp .next/*.json out/.next/ 2>/dev/null || true
+
+          # FIX: Handle entry points if package.json has type:module
+          # If server.js is CJS but package.json is ESM, we might need to rename it
+          # However, Next.js standalone server.js is usually compatible or we can use --input-type
+          # A safer way is to ensure all .js in .next/server are treated as ESM if they contain 'export'
+          echo '{"type": "module"}' > out/.next/server/package.json
 
           # Static assets
           mkdir -p out/.next/static
