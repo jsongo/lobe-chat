@@ -39,6 +39,7 @@ COPY --from=base /distroless/ /
 
 # Precisely copy the prepared app from CI context
 # This directory 'out' is now fully ready, including arm64 sharp binaries
+# and is symlink-free thanks to npm install in the CI runner
 COPY --chown=1001:1001 out /app
 
 # Copy user/group data

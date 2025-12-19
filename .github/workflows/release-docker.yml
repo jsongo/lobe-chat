@@ -72,35 +72,39 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
-          # 1. Use pnpm deploy to extract a self-contained production directory
-          pnpm deploy --filter=@lobehub/lobehub --prod --legacy out
+          # 1. Create a clean 'out' directory
+          mkdir -p out
 
-          # 2. Copy build artifacts into 'out'
+          # 2. Prepare package.json for npm (flatten workspace versions)
+          node scripts/prepare-npm-pkg.mjs
+          cp package.json.npm out/package.json
+
+          # 3. Install production dependencies using npm to avoid symlink issues in Docker
+          # We use --legacy-peer-deps to avoid strict peer dependency checks
+          cd out
+          npm install --omit=dev --no-package-lock --legacy-peer-deps
+
+          # 4. PRE-FETCH SHARP ARM64 BINARIES
+          # We force install the arm64 binary package.
+          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
+            npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
+          fi
+          cd ..
+
+          # 5. Copy build artifacts into 'out'
           cp -r .next/standalone/. out/
           mkdir -p out/.next/static
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
-          # 3. PRE-FETCH SHARP ARM64 BINARIES ON RUNNER
-          # We use a trick to force download the arm64 binaries for sharp
-          # without breaking the existing node_modules.
-          # Sharp uses @img/sharp-linux-arm64 as its binary provider.
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            cd out
-            # We install the arm64 binary package directly.
-            # This is much safer than 'npm install sharp' as it doesn't try to rebuild the tree.
-            npm install @img/sharp-linux-arm64 --no-save --legacy-peer-deps
-            cd ..
-          fi
-
-          # 4. Handle migrations and scripts
+          # 6. Handle migrations and scripts
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
           cp scripts/migrateServerDB/errorHint.js out/
           cp scripts/serverLauncher/startServer.js out/
 
-          # 5. Final cleanup of Docker context
+          # 7. Final cleanup of Docker context
           echo "*" > .dockerignore
           echo "!out" >> .dockerignore
           echo "!Dockerfile.ci" >> .dockerignore

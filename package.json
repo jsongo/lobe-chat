@@ -420,5 +420,8 @@
     "overrides": {
       "stylelint-config-clean-order": "7.0.0"
     }
+  },
+  "optionalDependencies": {
+    "@img/sharp-linux-arm64": "^0.34.5"
   }
 }
