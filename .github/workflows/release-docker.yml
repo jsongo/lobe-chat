@@ -38,15 +38,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        # Use npm for better Docker compatibility (no symlinks)
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Build Next.js App
         env:
@@ -66,32 +68,28 @@ jobs:
           DOCKER: "true"
         run: |
           # Use build:docker script which includes recovery logic
-          npm run build:docker
+          pnpm run build:docker
 
       - name: Prepare Docker Context
         run: |
-          # 1. Create a clean production output directory
-          mkdir -p out
+          # 1. Use pnpm deploy to extract a self-contained production directory
+          # This is the official way to prepare monorepo apps for Docker.
+          # It handles all dependencies correctly and is more reliable than manual cp.
+          pnpm deploy --filter=@lobehub/lobehub --prod --legacy out
 
-          # 2. Copy build artifacts into 'out'
+          # 2. Copy build artifacts into the deploy directory
+          # Note: We copy everything into 'out' which will be the Docker root
           cp -r .next/standalone/. out/
           mkdir -p out/.next/static
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
-          # 3. Handle dependencies for production
-          # We copy the already installed node_modules (which are flat in npm)
-          # then prune devDependencies
-          cp -r node_modules out/
+          # 3. Ensure sharp contains linux-arm64 binaries
+          # We do this in the 'out' directory which has its own node_modules
           cd out
-          npm prune --production
+          npm install --os=linux --cpu=arm64 sharp --no-save
 
-          # 4. Fix sharp for the target architecture
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            npm install --os=linux --cpu=arm64 sharp
-          fi
-
-          # 5. Copy migrations and other scripts into 'out'
+          # 4. Copy migrations and other scripts into deploy directory
           cd ..
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
@@ -99,7 +97,7 @@ jobs:
           cp scripts/migrateServerDB/errorHint.js out/
           cp scripts/serverLauncher/startServer.js out/
 
-          # 6. Final cleanup of Docker context
+          # 5. Final cleanup of Docker context
           # Create a minimal .dockerignore for the final step
           echo "*" > .dockerignore
           echo "!out" >> .dockerignore
