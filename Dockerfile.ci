@@ -47,15 +47,22 @@ COPY --from=base /distroless/ /
 COPY --from=base /etc/passwd /etc/passwd
 COPY --from=base /etc/group /etc/group
 
+# --- Next.js Standalone Core ---
 # Copy artifacts from build context
-# Copy standalone first
 COPY --chown=1001:1001 .next/standalone /app/
 
-# Copy the entire node_modules from build context (already pruned to production only)
-# This ensures all symlinks and peer dependencies are preserved
+# --- Next.js Static Assets ---
+# Standalone mode does not include static assets and public files.
+# We must copy them manually to ensure the frontend works.
+# See: https://nextjs.org/docs/pages/api-reference/next-config-js/output#automatically-copying-traced-files
+COPY --chown=1001:1001 public /app/public
+COPY --chown=1001:1001 .next/static /app/.next/static
+
+# --- Dependencies ---
+# Copy the entire node_modules from build context (already pruned and prepared for target arch)
 COPY --chown=1001:1001 node_modules /app/node_modules
 
-# Copy other necessary files
+# --- Other necessary files ---
 COPY --chown=1001:1001 packages/database/migrations /app/migrations
 COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
 COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
@@ -72,24 +79,6 @@ ENV NODE_ENV="production" \
     MIDDLEWARE_REWRITE_THROUGH_LOCAL="1" \
     HOSTNAME="0.0.0.0" \
     PORT="3210"
-
-# Runtime Environment Variables from original Dockerfile
-ENV ACCESS_CODE="" \
-    APP_URL="" \
-    API_KEY_SELECT_MODE="" \
-    DEFAULT_AGENT_CONFIG="" \
-    SYSTEM_AGENT="" \
-    FEATURE_FLAGS="" \
-    PROXY_URL="" \
-    ENABLE_AUTH_PROTECTION="" \
-    KEY_VAULTS_SECRET="" \
-    DATABASE_DRIVER="node" \
-    DATABASE_URL="" \
-    AUTH_SECRET="" \
-    AUTH_SSO_PROVIDERS="" \
-    NEXT_PUBLIC_AUTH_URL="" \
-    CLERK_SECRET_KEY="" \
-    CLERK_WEBHOOK_SECRET=""
 
 # User and group IDs
 USER 1001

@@ -76,6 +76,12 @@ jobs:
           # We use --ignore-scripts to avoid running 'prepare' (husky) which fails in CI
           pnpm prune --prod --no-optional --ignore-scripts
 
+          # Fix sharp for target architecture
+          # If building for arm64, we need to ensure the correct sharp binary is present
+          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
+            pnpm add --os=linux --cpu=arm64 sharp
+          fi
+
           # Create a temporary .dockerignore that allows .next and node_modules folders
           # (remove these lines from original .dockerignore for CI builds)
           grep -v -E "^(\.next|node_modules)$" .dockerignore > .dockerignore.tmp
