@@ -47,12 +47,15 @@ COPY --from=base /distroless/ /
 COPY --from=base /etc/passwd /etc/passwd
 COPY --from=base /etc/group /etc/group
 
-# Copy artifacts from build context, SETTING OWNERSHIP DURING COPY
-# This is efficient and avoids recursive chown issues
+# Copy artifacts from build context
+# Copy standalone first
 COPY --chown=1001:1001 .next/standalone /app/
-COPY --chown=1001:1001 node_modules/.pnpm /app/node_modules/.pnpm
-COPY --chown=1001:1001 node_modules/pg /app/node_modules/pg
-COPY --chown=1001:1001 node_modules/drizzle-orm /app/node_modules/drizzle-orm
+
+# Copy the entire node_modules from build context (already pruned to production only)
+# This ensures all symlinks and peer dependencies are preserved
+COPY --chown=1001:1001 node_modules /app/node_modules
+
+# Copy other necessary files
 COPY --chown=1001:1001 packages/database/migrations /app/migrations
 COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
 COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
