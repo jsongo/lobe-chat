@@ -38,19 +38,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'pnpm'
+          cache: 'npm'
 
       - name: Install dependencies
-        # Use hoisted linker to avoid symlink issues when copying to Docker
-        # This creates a flat node_modules structure that is Docker-safe
-        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
+        # Use npm for better Docker compatibility (no symlinks)
+        run: npm install
 
       - name: Build Next.js App
         env:
@@ -70,30 +66,46 @@ jobs:
           DOCKER: "true"
         run: |
           # Use build:docker script which includes recovery logic
-          pnpm run build:docker
+          npm run build:docker
 
       - name: Prepare Docker Context
         run: |
-          # Ensure sharp contains linux-arm64 binaries
-          # We do this while node_modules is still full
-          pnpm add --save-optional --os=linux --cpu=arm64 sharp
+          # 1. Create a clean production output directory
+          mkdir -p out
 
-          # Prune devDependencies to reduce image size
-          pnpm prune --prod --no-optional --ignore-scripts
+          # 2. Copy build artifacts into 'out'
+          cp -r .next/standalone/. out/
+          mkdir -p out/.next/static
+          cp -r .next/static/. out/.next/static/
+          cp -r public/. out/public/
 
-          # CONVERT SYMLINKS TO REAL FILES (DEREFERENCE)
-          # pnpm uses symlinks which break during Docker COPY.
-          # We replace the symlinked node_modules with a real directory containing all files.
-          echo "Dereferencing node_modules (this may take a minute)..."
-          mv node_modules node_modules_links
-          cp -RL node_modules_links node_modules
-          rm -rf node_modules_links
+          # 3. Handle dependencies for production
+          # We copy the already installed node_modules (which are flat in npm)
+          # then prune devDependencies
+          cp -r node_modules out/
+          cd out
+          npm prune --production
 
-          # Create a temporary .dockerignore that allows .next and node_modules folders
-          grep -v -E "^(\.next|node_modules)$" .dockerignore > .dockerignore.tmp
-          mv .dockerignore.tmp .dockerignore
+          # 4. Fix sharp for the target architecture
+          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
+            npm install --os=linux --cpu=arm64 sharp
+          fi
 
-          # Ensure patches directory exists (even if empty) for Dockerfile.ci
+          # 5. Copy migrations and other scripts into 'out'
+          cd ..
+          mkdir -p out/migrations
+          cp -r packages/database/migrations/. out/migrations/
+          cp scripts/migrateServerDB/docker.cjs out/
+          cp scripts/migrateServerDB/errorHint.js out/
+          cp scripts/serverLauncher/startServer.js out/
+
+          # 6. Final cleanup of Docker context
+          # Create a minimal .dockerignore for the final step
+          echo "*" > .dockerignore
+          echo "!out" >> .dockerignore
+          echo "!Dockerfile.ci" >> .dockerignore
+
+          # Ensure patches directory exists
           mkdir -p patches
 
       - name: Set up Docker Buildx
