@@ -20,6 +20,7 @@ cp /usr/lib/$(arch)-linux-gnu/libstdc++.so.6 /distroless/lib/libstdc++.so.6
 cp /usr/lib/$(arch)-linux-gnu/libgcc_s.so.1 /distroless/lib/libgcc_s.so.1
 cp /usr/local/bin/node /distroless/bin/node
 cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.crt
+rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
 # Create user info
@@ -29,18 +30,6 @@ groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
-## --- Preparation Phase: Surgical Sharp Fix ---
-FROM node:${NODEJS_VERSION}-slim AS builder
-WORKDIR /app
-
-# Copy the deployed production directory from build context
-COPY out /app
-
-# Fix sharp for the target architecture (e.g. arm64)
-# We use --no-save and --legacy-peer-deps to avoid tree resolution errors
-# and only replace the binary for the current container OS/CPU
-RUN npm install sharp --no-save --legacy-peer-deps
-
 ## --- Final Assembly Stage (BusyBox) ---
 FROM busybox:latest AS app
 WORKDIR /app
@@ -48,8 +37,9 @@ WORKDIR /app
 # Copy binaries/libraries from base
 COPY --from=base /distroless/ /
 
-# Precisely copy the prepared app from builder
-COPY --from=builder --chown=1001:1001 /app /app
+# Precisely copy the prepared app from CI context
+# This directory 'out' is now fully ready, including arm64 sharp binaries
+COPY --chown=1001:1001 out /app
 
 # Copy user/group data
 COPY --from=base /etc/passwd /etc/passwd
