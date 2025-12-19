@@ -29,6 +29,18 @@ groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
+## --- Preparation Phase: Surgical Sharp Fix ---
+FROM node:${NODEJS_VERSION}-slim AS builder
+WORKDIR /app
+
+# Copy the deployed production directory from build context
+COPY out /app
+
+# Fix sharp for the target architecture (e.g. arm64)
+# We use --no-save and --legacy-peer-deps to avoid tree resolution errors
+# and only replace the binary for the current container OS/CPU
+RUN npm install sharp --no-save --legacy-peer-deps
+
 ## --- Final Assembly Stage (BusyBox) ---
 FROM busybox:latest AS app
 WORKDIR /app
@@ -36,29 +48,15 @@ WORKDIR /app
 # Copy binaries/libraries from base
 COPY --from=base /distroless/ /
 
-# Precisely copy only what's needed for the runtime
-# 1. Standalone Server
-COPY --chown=1001:1001 .next/standalone /app/
+# Precisely copy the prepared app from builder
+COPY --from=builder --chown=1001:1001 /app /app
 
-# 2. Static Assets (REQUIRED for standalone)
-COPY --chown=1001:1001 public /app/public
-COPY --chown=1001:1001 .next/static /app/.next/static
-
-# 3. Real Node Modules (Already dereferenced and architected in CI)
-COPY --chown=1001:1001 node_modules /app/node_modules
-
-# 4. Migrations and Scripts
-COPY --chown=1001:1001 packages/database/migrations /app/migrations
-COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
-COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
-COPY --chown=1001:1001 scripts/serverLauncher/startServer.js /app/startServer.js
-
-# Copy user info
+# Copy user/group data
 COPY --from=base /etc/passwd /etc/passwd
 COPY --from=base /etc/group /etc/group
 RUN [ -f /etc/proxychains4.conf ] && chown 1001:1001 /etc/proxychains4.conf || true
 
-## --- Final Scratch-based production image ---
+## --- Execution Stage (Scratch) ---
 FROM scratch
 
 # ONLY COPY what we assembled in the app stage

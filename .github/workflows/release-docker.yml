@@ -38,16 +38,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          # We disable cache because package-lock.json is not available in the repo
-          # cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        # Force npm install even without a lockfile
-        run: npm install --no-package-lock
+        run: pnpm install --frozen-lockfile
 
       - name: Build Next.js App
         env:
@@ -67,12 +68,14 @@ jobs:
           DOCKER: "true"
         run: |
           # Use build:docker script which includes recovery logic
-          npm run build:docker
+          pnpm run build:docker
 
       - name: Prepare Docker Context
         run: |
-          # 1. Create a clean production output directory
-          mkdir -p out
+          # 1. Use pnpm deploy to extract a self-contained production directory
+          # This creates a standalone directory 'out' with all necessary dependencies.
+          # Links within 'out' are relative and remain valid inside Docker.
+          pnpm deploy --filter=@lobehub/lobehub --prod --legacy out
 
           # 2. Copy build artifacts into 'out'
           cp -r .next/standalone/. out/
@@ -80,28 +83,14 @@ jobs:
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
-          # 3. Copy full node_modules into 'out'
-          # npm uses a flat structure with real files, so this is Docker-safe
-          cp -r node_modules out/
-
-          # 4. Prune development dependencies in the 'out' directory
-          cd out
-          npm prune --production
-
-          # 5. Fix sharp for the target architecture (arm64)
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            npm install --os=linux --cpu=arm64 sharp --no-save
-          fi
-
-          # 6. Copy migrations and other scripts into 'out'
-          cd ..
+          # 3. Handle migrations and scripts
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
           cp scripts/migrateServerDB/errorHint.js out/
           cp scripts/serverLauncher/startServer.js out/
 
-          # 7. Final cleanup of Docker context
+          # 4. Final cleanup of Docker context
           echo "*" > .dockerignore
           echo "!out" >> .dockerignore
           echo "!Dockerfile.ci" >> .dockerignore
