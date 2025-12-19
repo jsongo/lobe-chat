@@ -72,20 +72,9 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
-          # Fix sharp for target architecture
-          # We do this BEFORE pruning to avoid dependency state conflicts
-          # If building for arm64, we need to ensure the correct sharp binary is present
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            pnpm add --os=linux --cpu=arm64 sharp
-          fi
-
-          # Prune devDependencies to reduce image size and ensure prod deps only
-          # We use --ignore-scripts to avoid running 'prepare' (husky) which fails in CI
-          pnpm prune --prod --no-optional --ignore-scripts
-
-          # Create a temporary .dockerignore that allows .next and node_modules folders
-          # (remove these lines from original .dockerignore for CI builds)
-          grep -v -E "^(\.next|node_modules)$" .dockerignore > .dockerignore.tmp
+          # Create a temporary .dockerignore that allows .next folder
+          # Note: We NO LONGER need node_modules from CI, we will install in Docker
+          grep -v "^\.next$" .dockerignore > .dockerignore.tmp
           mv .dockerignore.tmp .dockerignore
 
           # Ensure patches directory exists (even if empty) for Dockerfile.ci

@@ -1,14 +1,13 @@
 ## Set global build ENV
 ARG NODEJS_VERSION="24"
 
-## Base image with required binaries and libraries
+## Base image for system binaries
 FROM node:${NODEJS_VERSION}-slim AS base
 
 ARG USE_CN_MIRROR
 
 ENV DEBIAN_FRONTEND="noninteractive"
 
-# Install required system packages
 RUN <<EOF
 set -e
 if [ "${USE_CN_MIRROR:-false}" = "true" ]; then
@@ -28,48 +27,80 @@ cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.
 rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
-# Create user info files
+# Create user info
 RUN <<EOF
 set -e
 groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
-## Final Production Image based on busybox (very small base, ~1.2MB)
-FROM busybox:latest
+## Production Dependencies stage
+FROM node:${NODEJS_VERSION}-slim AS deps
 
 WORKDIR /app
 
-# Copy distroless base from base stage
+# Copy minimum files for installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc /app/
+COPY patches /app/patches/
+# Copy all package.json files to maintain workspace structure
+COPY packages /app/packages/
+COPY apps /app/apps/
+
+# Install production dependencies for the correct architecture
+RUN <<EOF
+set -e
+# Clean up source files, keeping only package.json to speed up pnpm
+find packages -mindepth 2 -type f ! -name "package.json" -delete || true
+find apps -mindepth 2 -type f ! -name "package.json" -delete || true
+
+# Setup pnpm
+npm i -g corepack@latest
+corepack enable
+corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
+
+# Install production dependencies
+pnpm install --prod --frozen-lockfile --ignore-scripts
+
+# Explicitly install sharp for current architecture
+pnpm add sharp
+EOF
+
+## Application assembly stage
+FROM busybox:latest AS app
+
+WORKDIR /app
+
+# Copy binaries and libraries
 COPY --from=base /distroless/ /
 
-# Copy user info for the final image
-COPY --from=base /etc/passwd /etc/passwd
-COPY --from=base /etc/group /etc/group
-
-# --- Next.js Standalone Core ---
-# Copy artifacts from build context
+# 1. Copy standalone server
 COPY --chown=1001:1001 .next/standalone /app/
 
-# --- Next.js Static Assets ---
-# Standalone mode does not include static assets and public files.
-# We must copy them manually to ensure the frontend works.
-# See: https://nextjs.org/docs/pages/api-reference/next-config-js/output#automatically-copying-traced-files
+# 2. Copy static assets (REQUIRED for standalone mode)
 COPY --chown=1001:1001 public /app/public
 COPY --chown=1001:1001 .next/static /app/.next/static
 
-# --- Dependencies ---
-# Copy the entire node_modules from build context (already pruned and prepared for target arch)
-COPY --chown=1001:1001 node_modules /app/node_modules
+# 3. Copy production dependencies from deps stage
+# This replaces the possibly architecture-mismatched modules from CI runner
+COPY --from=deps --chown=1001:1001 /app/node_modules /app/node_modules
 
-# --- Other necessary files ---
+# 4. Copy database migrations and other scripts
 COPY --chown=1001:1001 packages/database/migrations /app/migrations
 COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
 COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
 COPY --chown=1001:1001 scripts/serverLauncher/startServer.js /app/startServer.js
 
-# Ensure proxychains config ownership
+# Copy user info
+COPY --from=base /etc/passwd /etc/passwd
+COPY --from=base /etc/group /etc/group
+
+# Ownership for proxychains
 RUN [ -f /etc/proxychains4.conf ] && chown 1001:1001 /etc/proxychains4.conf || true
+
+## Final Scratch-based production image (safe now as we copy from app)
+FROM scratch
+
+COPY --from=app / /
 
 ENV NODE_ENV="production" \
     NODE_OPTIONS="--dns-result-order=ipv4first --use-openssl-ca" \
@@ -80,7 +111,7 @@ ENV NODE_ENV="production" \
     HOSTNAME="0.0.0.0" \
     PORT="3210"
 
-# User and group IDs
+# User ID
 USER 1001
 
 EXPOSE 3210/tcp
