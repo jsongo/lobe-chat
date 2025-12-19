@@ -122,102 +122,19 @@ EOF
 COPY . .
 
 # run build standalone for docker version
-# Skip external API calls during build by setting offline mode
+# Use the validated build-with-recovery script to bypass Next.js 16.0.10 rename bugs
 RUN <<'EOF'
-set -e  # Exit on error, but we'll handle specific cases
-
-# Set environment variables for BetterAuth to prevent default secret warnings
-# Generate a 64-character secret (BetterAuth requires at least 32 chars)
+set -e
 export AUTH_SECRET="docker-build-$(date +%s)-$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)"
 export NEXT_PUBLIC_AUTH_URL="http://localhost:3210"
-
-# Disable Clerk during build
 export NEXT_PUBLIC_ENABLE_CLERK_AUTH=0
 export NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=""
 
-echo "Starting build:docker..."
-echo "Environment: AUTH_SECRET=${AUTH_SECRET:0:8}***"
-pnpm run build:docker
-BUILD_EXIT_CODE=$?
-
-if [ $BUILD_EXIT_CODE -ne 0 ]; then
-  echo "❌ Build failed with exit code $BUILD_EXIT_CODE"
-
-  # Debug: Show detailed information about the failure
-  echo "=== BUILD FAILURE DEBUG INFO ==="
-  echo "Current directory: $(pwd)"
-  echo "Node version: $(node --version)"
-  echo "NPM version: $(npm --version)"
-
-  echo "--- Next.js build output directory structure ---"
-  if [ -d ".next" ]; then
-    find .next -maxdepth 3 -type f -name "*.js" -o -name "*.json" 2>/dev/null | head -10
-  fi
-
-  echo "--- Checking for proxy.js specifically ---"
-  find .next -name "proxy.js" 2>/dev/null
-
-  echo "--- Checking for middleware.js ---"
-  find .next -name "middleware.js" 2>/dev/null
-
-  echo "--- Contents of .next/server directory ---"
-  ls -la .next/server/ 2>/dev/null || echo "No .next/server directory"
-
-  # More reliable workaround: regenerate proxy.js and retry
-  echo ""
-  echo "=== APPLYING WORKAROUNDS ==="
-
-  # Workaround 1: Check if we need to regenerate middleware
-  if [ ! -f ".next/server/proxy.js" ] && [ -f "src/proxy.ts" ]; then
-    echo "⚠️  proxy.js missing but src/proxy.ts exists - this indicates a Next.js build issue"
-
-    # Try to manually force middleware generation by running a simpler build first
-    echo "Attempting to generate middleware files..."
-
-    # Check if .next/standalone exists, if so the main build actually succeeded
-    if [ -d ".next/standalone" ]; then
-      echo "✓ .next/standalone exists - core build succeeded"
-
-      # Create a simple middleware.js if missing (minimal working version)
-      if [ ! -f ".next/server/middleware.js" ]; then
-        echo "Generating minimal middleware.js..."
-        cat > .next/server/middleware.js << 'MINIMAL_MW'
-          // Generated minimal middleware
-          export default function() { return undefined; }
-          export const config = { matcher: [] };
-        MINIMAL_MW
-      fi
-
-      echo "✓ Build recovered: standalone exists, middleware created"
-
-      # Run post-build tasks
-      echo "Running post-build tasks..."
-      pnpm run build-sitemap || echo "⚠️  Sitemap generation failed but continuing..."
-      pnpm run build-migrate-db || echo "⚠️  DB migration failed but continuing..."
-
-      exit 0
-    else
-      echo "❌ .next/standalone not found - complete build failure"
-      exit 1
-    fi
-  else
-    echo "Other build failure detected"
-
-    # Verify if this is truly a failure or just post-build issues
-    if [ -d ".next/standalone" ]; then
-      echo "✓ Build succeeded but post-build failed, continuing..."
-      pnpm run build-sitemap || echo "Sitemap generation failed"
-      pnpm run build-migrate-db || echo "DB migration failed"
-      exit 0
-    else
-      echo "❌ Cannot recover - no standalone output found"
-      exit 1
-    fi
-  fi
-else
-  echo "✓ Build completed successfully"
-  exit 0
-fi
+echo "🚀 Starting build with recovery logic..."
+# Ensure we use node to run the recovery script
+node scripts/build-with-recovery.mjs
+pnpm run build-sitemap || echo "⚠️ Sitemap generation failed but continuing..."
+pnpm run build-migrate-db || echo "⚠️ DB migration failed but continuing..."
 EOF
 
 ## Application image, copy all the files for production

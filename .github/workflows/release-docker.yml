@@ -75,31 +75,40 @@ jobs:
           # 1. Create a clean 'out' directory
           mkdir -p out
 
-          # 2. Prepare package.json for npm (flatten workspace versions)
-          node scripts/prepare-npm-pkg.mjs
-          cp package.json.npm out/package.json
-
-          # 3. Install production dependencies using npm to avoid symlink issues in Docker
-          # We use --legacy-peer-deps to avoid strict peer dependency checks
-          # We create a clean .npmrc to avoid auth issues with private registries
-          cd out
-          echo "registry=https://registry.npmjs.org/" > .npmrc
-          npm install --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
-
-          # 4. PRE-FETCH SHARP ARM64 BINARIES
-          # We force install the arm64 binary package.
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
-          fi
-          cd ..
-
-          # 5. Copy build artifacts into 'out'
+          # 2. Copy build artifacts FIRST (including standalone base)
+          # standalone includes its own minimal node_modules and server.js
           cp -r .next/standalone/. out/
           mkdir -p out/.next/static
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
-          # 6. Handle migrations and scripts
+          # 3. Prepare merged package.json for npm
+          # We use our script to flatten and strip local workspace deps
+          node scripts/prepare-npm-pkg.mjs
+          cp package.json.npm out/package.json
+
+          # 4. Install/Update production dependencies in the final directory
+          # This ensures that any missing prod deps (like pg or sharp) are present
+          cd out
+          echo "registry=https://registry.npmjs.org/" > .npmrc
+          npm install --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
+
+          # 5. FORCE SHARP ARM64 BINARIES
+          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
+            npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
+            # Verify sharp binaries are present
+            if [ ! -d "node_modules/@img/sharp-linux-arm64" ]; then
+              echo "❌ Error: @img/sharp-linux-arm64 was not installed correctly!"
+              exit 1
+            fi
+          fi
+
+          # 6. Cleanup build-only files in 'out'
+          rm -f .npmrc package.json.npm
+
+          cd ..
+
+          # 7. Handle migrations and scripts
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
