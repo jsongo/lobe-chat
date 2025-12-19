@@ -1,20 +1,16 @@
 ## Set global build ENV
 ARG NODEJS_VERSION="24"
 
-## Base image for system binaries
+## --- Base Phase: Prepare Binaries ---
 FROM node:${NODEJS_VERSION}-slim AS base
-
 ARG USE_CN_MIRROR
-
 ENV DEBIAN_FRONTEND="noninteractive"
-
 RUN <<EOF
 set -e
 if [ "${USE_CN_MIRROR:-false}" = "true" ]; then
     sed -i "s/deb.debian.org/mirrors.ustc.edu.cn/g" "/etc/apt/sources.list.d/debian.sources"
 fi
-apt update
-apt install ca-certificates proxychains-ng -qy
+apt update && apt install ca-certificates proxychains-ng -qy
 mkdir -p /distroless/bin /distroless/etc /distroless/etc/ssl/certs /distroless/lib
 cp /usr/lib/$(arch)-linux-gnu/libproxychains.so.4 /distroless/lib/libproxychains.so.4
 cp /usr/lib/$(arch)-linux-gnu/libdl.so.2 /distroless/lib/libdl.so.2
@@ -24,7 +20,6 @@ cp /usr/lib/$(arch)-linux-gnu/libstdc++.so.6 /distroless/lib/libstdc++.so.6
 cp /usr/lib/$(arch)-linux-gnu/libgcc_s.so.1 /distroless/lib/libgcc_s.so.1
 cp /usr/local/bin/node /distroless/bin/node
 cp /etc/ssl/certs/ca-certificates.crt /distroless/etc/ssl/certs/ca-certificates.crt
-rm -rf /tmp/* /var/lib/apt/lists/* /var/tmp/*
 EOF
 
 # Create user info
@@ -34,57 +29,25 @@ groupadd -g 1001 nodejs
 useradd -u 1001 -g nodejs -s /bin/sh -m nextjs
 EOF
 
-## Production Dependencies stage
-FROM node:${NODEJS_VERSION}-slim AS deps
-
-WORKDIR /app
-
-# Copy minimum files for installation
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc /app/
-COPY patches /app/patches/
-# Copy all package.json files to maintain workspace structure
-COPY packages /app/packages/
-COPY apps /app/apps/
-
-# Install production dependencies for the correct architecture
-RUN <<EOF
-set -e
-# Clean up source files, keeping only package.json to speed up pnpm
-find packages -mindepth 2 -type f ! -name "package.json" -delete || true
-find apps -mindepth 2 -type f ! -name "package.json" -delete || true
-
-# Setup pnpm
-npm i -g corepack@latest
-corepack enable
-corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
-
-# Install production dependencies
-pnpm install --prod --frozen-lockfile --ignore-scripts
-
-# Explicitly install sharp for current architecture
-pnpm add sharp
-EOF
-
-## Application assembly stage
+## --- Final Assembly Stage (BusyBox) ---
 FROM busybox:latest AS app
-
 WORKDIR /app
 
-# Copy binaries and libraries
+# Copy binaries/libraries from base
 COPY --from=base /distroless/ /
 
-# 1. Copy standalone server
+# Precisely copy only what's needed for the runtime
+# 1. Standalone Server
 COPY --chown=1001:1001 .next/standalone /app/
 
-# 2. Copy static assets (REQUIRED for standalone mode)
+# 2. Static Assets (REQUIRED for standalone)
 COPY --chown=1001:1001 public /app/public
 COPY --chown=1001:1001 .next/static /app/.next/static
 
-# 3. Copy production dependencies from deps stage
-# This replaces the possibly architecture-mismatched modules from CI runner
-COPY --from=deps --chown=1001:1001 /app/node_modules /app/node_modules
+# 3. Real Node Modules (Already dereferenced and architected in CI)
+COPY --chown=1001:1001 node_modules /app/node_modules
 
-# 4. Copy database migrations and other scripts
+# 4. Migrations and Scripts
 COPY --chown=1001:1001 packages/database/migrations /app/migrations
 COPY --chown=1001:1001 scripts/migrateServerDB/docker.cjs /app/docker.cjs
 COPY --chown=1001:1001 scripts/migrateServerDB/errorHint.js /app/errorHint.js
@@ -93,29 +56,26 @@ COPY --chown=1001:1001 scripts/serverLauncher/startServer.js /app/startServer.js
 # Copy user info
 COPY --from=base /etc/passwd /etc/passwd
 COPY --from=base /etc/group /etc/group
-
-# Ownership for proxychains
 RUN [ -f /etc/proxychains4.conf ] && chown 1001:1001 /etc/proxychains4.conf || true
 
-## Final Scratch-based production image (safe now as we copy from app)
+## --- Final Scratch-based production image ---
 FROM scratch
 
-COPY --from=app / /
+# ONLY COPY what we assembled in the app stage
+COPY --from=app /app /app
+COPY --from=app /bin /bin
+COPY --from=app /lib /lib
+COPY --from=app /etc /etc
+COPY --from=app /usr /usr
 
 ENV NODE_ENV="production" \
     NODE_OPTIONS="--dns-result-order=ipv4first --use-openssl-ca" \
-    NODE_EXTRA_CA_CERTS="" \
-    NODE_TLS_REJECT_UNAUTHORIZED="" \
     SSL_CERT_FILE="/etc/ssl/certs/ca-certificates.crt" \
     MIDDLEWARE_REWRITE_THROUGH_LOCAL="1" \
     HOSTNAME="0.0.0.0" \
     PORT="3210"
 
-# User ID
 USER 1001
-
 EXPOSE 3210/tcp
-
 ENTRYPOINT ["/bin/node"]
-
 CMD ["/app/startServer.js"]

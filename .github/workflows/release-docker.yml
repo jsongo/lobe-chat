@@ -48,7 +48,9 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Use hoisted linker to avoid symlink issues when copying to Docker
+        # This creates a flat node_modules structure that is Docker-safe
+        run: pnpm install --frozen-lockfile --config.node-linker=hoisted
 
       - name: Build Next.js App
         env:
@@ -72,9 +74,23 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
-          # Create a temporary .dockerignore that allows .next folder
-          # Note: We NO LONGER need node_modules from CI, we will install in Docker
-          grep -v "^\.next$" .dockerignore > .dockerignore.tmp
+          # Ensure sharp contains linux-arm64 binaries
+          # We do this while node_modules is still full
+          pnpm add --save-optional --os=linux --cpu=arm64 sharp
+
+          # Prune devDependencies to reduce image size
+          pnpm prune --prod --no-optional --ignore-scripts
+
+          # CONVERT SYMLINKS TO REAL FILES (DEREFERENCE)
+          # pnpm uses symlinks which break during Docker COPY.
+          # We replace the symlinked node_modules with a real directory containing all files.
+          echo "Dereferencing node_modules (this may take a minute)..."
+          mv node_modules node_modules_links
+          cp -RL node_modules_links node_modules
+          rm -rf node_modules_links
+
+          # Create a temporary .dockerignore that allows .next and node_modules folders
+          grep -v -E "^(\.next|node_modules)$" .dockerignore > .dockerignore.tmp
           mv .dockerignore.tmp .dockerignore
 
           # Ensure patches directory exists (even if empty) for Dockerfile.ci
