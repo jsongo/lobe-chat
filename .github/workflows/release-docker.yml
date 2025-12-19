@@ -78,17 +78,22 @@ jobs:
           # 2. Copy build artifacts FIRST (including standalone base)
           # standalone includes its own minimal node_modules and server.js
           cp -r .next/standalone/. out/
+
+          # IMPORTANT: Perform a deep sync of the .next directory
+          # The standalone output often misses critical metadata files (manifests)
+          # needed for the App Router and Server Actions.
+          echo "Syncing full .next metadata into standalone..."
+          mkdir -p out/.next
+          # Sync everything from .next to out/.next, but skip the cache to save space
+          # We use /. suffix to copy contents into the destination
+          mkdir -p out/.next/server
+          cp -r .next/server/. out/.next/server/ 2>/dev/null || true
+          cp .next/*.json out/.next/ 2>/dev/null || true
+
+          # Static assets
           mkdir -p out/.next/static
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
-
-          # IMPORTANT: Copy all manifest and metadata files missing in standalone
-          # These are essential for dynamic routing, i18n, and metadata in Next.js
-          echo "Syncing supplemental Next.js metadata..."
-          mkdir -p out/.next/server
-          cp .next/*.json out/.next/ 2>/dev/null || true
-          # Some deployments also need the server-side manifests
-          cp .next/server/*.json out/.next/server/ 2>/dev/null || true
 
           # 3. Prepare merged package.json for npm
           # We use our script to flatten and strip local workspace deps
