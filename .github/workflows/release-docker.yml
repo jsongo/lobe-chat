@@ -73,8 +73,8 @@ jobs:
       - name: Prepare Docker Context
         run: |
           # Prune devDependencies to reduce image size and ensure prod deps only
-          # Note: We do this after 'pnpm run build:docker' but before Docker build
-          pnpm prune --prod --no-optional
+          # We use --ignore-scripts to avoid running 'prepare' (husky) which fails in CI
+          pnpm prune --prod --no-optional --ignore-scripts
 
           # Create a temporary .dockerignore that allows .next and node_modules folders
           # (remove these lines from original .dockerignore for CI builds)
