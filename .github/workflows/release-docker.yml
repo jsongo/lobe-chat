@@ -82,6 +82,11 @@ jobs:
           cp -r .next/static/. out/.next/static/
           cp -r public/. out/public/
 
+          # IMPORTANT: Copy build-manifest.json and other metadata files missing in standalone
+          # These are often needed by dynamic routes at runtime
+          cp .next/build-manifest.json out/.next/ 2>/dev/null || true
+          cp .next/react-loadable-manifest.json out/.next/ 2>/dev/null || true
+
           # 3. Prepare merged package.json for npm
           # We use our script to flatten and strip local workspace deps
           node scripts/prepare-npm-pkg.mjs
@@ -91,7 +96,8 @@ jobs:
           # This ensures that any missing prod deps (like pg or sharp) are present
           cd out
           echo "registry=https://registry.npmjs.org/" > .npmrc
-          npm install --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
+          # Explicitly include sharp and canvas polyfills for PDF/image processing
+          npm install sharp @napi-rs/canvas --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
 
           # 5. FORCE SHARP ARM64 BINARIES
           if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
