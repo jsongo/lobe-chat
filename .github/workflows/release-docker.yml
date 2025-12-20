@@ -97,8 +97,6 @@ jobs:
           echo "Performing deep sync of .next metadata..."
           mkdir -p out/.next/server
           cp -r .next/. out/.next/ 2>/dev/null || true
-          # FIX: Ensure server directory treats internal .js as ESM if needed
-          echo '{"type": "module"}' > out/.next/server/package.json
 
           # 6. FORCE SHARP ARM64 BINARIES (ensure they survive the merge)
           cd out
