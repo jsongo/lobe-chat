@@ -72,56 +72,22 @@ jobs:
 
       - name: Prepare Docker Context
         run: |
+          # THE ESSENTIAL APPROACH: Use pure Next.js standalone output
+          # We don't try to merge or install anything manually.
+          # We let Next.js own the runtime environment.
+
           # 1. Create a clean 'out' directory
           mkdir -p out
 
-          # 2. Prepare base package.json for npm (external deps only)
-          # This ensures we have a flat, symlink-free node_modules for third-party libs
-          node scripts/prepare-npm-pkg.mjs
-          cp package.json.npm out/package.json
-
-          # 3. Install production dependencies FIRST
-          cd out
-          echo "registry=https://registry.npmjs.org/" > .npmrc
-          npm install sharp @napi-rs/canvas --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
-          cd ..
-
-          # 4. Copy build artifacts and MERGE them
-          # We copy standalone output OVER the npm-installed node_modules
-          # standalone includes compiled versions of our local workspace packages
-          echo "Merging standalone output with external dependencies..."
+          # 2. Copy the ENTIRE standalone directory as the new root
           cp -r .next/standalone/. out/
 
-          # 5. Full .next directory alignment
-          # We must ensure that ALL files from the build .next directory are present
-          # in the standalone .next directory, in the EXACT same structure.
-          echo "Performing bit-for-bit alignment of .next directory..."
-          rm -rf out/.next
-          mkdir -p out/.next
-          cp -r .next/. out/.next/ 2>/dev/null || true
+          # 3. Add missing static assets required by Next.js standalone mode
+          mkdir -p out/.next/static
+          cp -r .next/static/. out/.next/static/
+          cp -r public/. out/public/
 
-          # FIX: Next.js manifests singleton initialization issue
-          # Sometimes Next.js looks for manifests in .next/server/ instead of .next/
-          # We create symlinks or copies to be 100% sure it finds them
-          echo "Applying manifest redundancy for runtime stability..."
-          cp out/.next/*.json out/.next/server/ 2>/dev/null || true
-
-          # 6. FORCE SHARP ARM64 BINARIES (ensure they survive the merge)
-          cd out
-          if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
-            npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
-            if [ ! -d "node_modules/@img/sharp-linux-arm64" ]; then
-              echo "❌ Error: @img/sharp-linux-arm64 was not installed correctly!"
-              exit 1
-            fi
-          fi
-
-          # 7. Final assets and cleanup
-          cp -r ../public/. ./public/ 2>/dev/null || true
-          rm -f .npmrc package.json.npm
-          cd ..
-
-          # 8. Handle migrations and server launcher
+          # 4. Handle migrations and scripts
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
@@ -129,12 +95,10 @@ jobs:
           cp scripts/serverLauncher/startServer.js out/startServer.js
           cp scripts/serverLauncher/startServer.js out/startServer.cjs
 
-          # 7. Final cleanup of Docker context
+          # 5. Final cleanup of Docker context
           echo "*" > .dockerignore
           echo "!out" >> .dockerignore
           echo "!Dockerfile.ci" >> .dockerignore
-
-          # Ensure patches directory exists
           mkdir -p patches
 
       - name: Set up Docker Buildx
