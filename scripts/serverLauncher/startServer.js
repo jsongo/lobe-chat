@@ -7,6 +7,15 @@ const DB_MIGRATION_SCRIPT_PATH = '/app/docker.cjs';
 const SERVER_SCRIPT_PATH = '/app/server.js';
 const PROXYCHAINS_CONF_PATH = '/etc/proxychains4.conf';
 
+// IMPORTANT: Ensure the working directory is set to /app
+// This is critical for Next.js standalone mode to find the .next directory
+try {
+  process.chdir('/app');
+  console.log('✅ Working directory set to /app');
+} catch (err) {
+  console.error('❌ Failed to set working directory:', err);
+}
+
 // Function to check if a string is a valid IP address
 const isValidIP = (ip, version = 4) => {
   const ipv4Regex =

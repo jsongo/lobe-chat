@@ -92,10 +92,13 @@ jobs:
           echo "Merging standalone output with external dependencies..."
           cp -r .next/standalone/. out/
 
-          # 5. Deep sync the .next directory metadata
-          # Ensure all manifests and chunks are present in their original relative structure
-          echo "Performing deep sync of .next metadata..."
-          mkdir -p out/.next/server
+          # 5. Full .next directory alignment
+          # We must ensure that ALL files from the build .next directory are present
+          # in the standalone .next directory, in the EXACT same structure.
+          # We use a trick to copy content WITHOUT creating a nested .next/server/server
+          echo "Performing bit-for-bit alignment of .next directory..."
+          rm -rf out/.next
+          mkdir -p out/.next
           cp -r .next/. out/.next/ 2>/dev/null || true
 
           # 6. FORCE SHARP ARM64 BINARIES (ensure they survive the merge)
