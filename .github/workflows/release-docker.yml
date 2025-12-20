@@ -116,11 +116,13 @@ jobs:
           cd ..
 
           # 7. Handle migrations and server launcher
-          # We rename startServer.js to .cjs to avoid conflicts with "type": "module" in package.json
+          # We provide BOTH startServer.js and startServer.cjs to ensure maximum compatibility
+          # with different deployment environments (some might hardcode .js)
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
           cp scripts/migrateServerDB/errorHint.js out/
+          cp scripts/serverLauncher/startServer.js out/startServer.js
           cp scripts/serverLauncher/startServer.js out/startServer.cjs
 
           # 7. Final cleanup of Docker context

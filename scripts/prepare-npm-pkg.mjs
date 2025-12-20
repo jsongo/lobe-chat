@@ -27,9 +27,10 @@ delete pkg.pnpm;
 delete pkg.scripts;
 delete pkg.devDependencies; // We only need prod deps in the final container
 
-// IMPORTANT: Force ESM mode for the production container to support Next.js middleware and ESM deps
-// This fixes the "Unexpected token 'export'" error in middleware.js
-pkg.type = 'module';
+// IMPORTANT: Do NOT set type: module in the root package.json.
+// Next.js standalone server.js is CommonJS.
+// We will handle ESM selectively in subdirectories.
+delete pkg.type;
 
 fs.writeFileSync('package.json.npm', JSON.stringify(pkg, null, 2));
-console.log('Generated package.json.npm with type:module and flattened workspace dependencies');
+console.log('Generated package.json.npm with flattened workspace dependencies (CJS mode)');
