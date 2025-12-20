@@ -12,6 +12,14 @@ const PROXYCHAINS_CONF_PATH = '/etc/proxychains4.conf';
 try {
   process.chdir('/app');
   console.log('✅ Working directory set to /app');
+
+  // Verify .next existence
+  const fsSync = require('node:fs');
+  if (!fsSync.existsSync('/app/.next')) {
+    console.error('❌ CRITICAL: /app/.next directory missing!');
+  } else {
+    console.log('✅ /app/.next directory confirmed.');
+  }
 } catch (err) {
   console.error('❌ Failed to set working directory:', err);
 }
