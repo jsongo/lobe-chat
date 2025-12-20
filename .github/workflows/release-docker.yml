@@ -75,34 +75,33 @@ jobs:
           # 1. Create a clean 'out' directory
           mkdir -p out
 
-          # 2. Copy build artifacts FIRST (including standalone base)
-          # standalone includes its own minimal node_modules and server.js
-          cp -r .next/standalone/. out/
-
-          # IMPORTANT: Perform a deep sync of the .next directory
-          # We sync the ENTIRE .next directory to ensure no manifests or chunks are missing.
-          # This is the most robust way to avoid "Manifests singleton not initialized" errors.
-          echo "Performing full .next directory sync..."
-          mkdir -p out/.next
-          cp -r .next/. out/.next/ 2>/dev/null || true
-
-          # FIX: Ensure Next.js internal files are treated as ESM if they use export
-          echo '{"type": "module"}' > out/.next/server/package.json
-
-          # Static assets (redundant but safe after the full sync)
-          cp -r public/. out/public/
-
-          # 3. Prepare merged package.json for npm
-          # We use our script to flatten and strip local workspace deps
+          # 2. Prepare base package.json for npm (external deps only)
+          # This ensures we have a flat, symlink-free node_modules for third-party libs
           node scripts/prepare-npm-pkg.mjs
           cp package.json.npm out/package.json
 
-          # 4. Install production dependencies
+          # 3. Install production dependencies FIRST
           cd out
           echo "registry=https://registry.npmjs.org/" > .npmrc
           npm install sharp @napi-rs/canvas --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
+          cd ..
 
-          # 5. FORCE SHARP ARM64 BINARIES
+          # 4. Copy build artifacts and MERGE them
+          # We copy standalone output OVER the npm-installed node_modules
+          # standalone includes compiled versions of our local workspace packages
+          echo "Merging standalone output with external dependencies..."
+          cp -r .next/standalone/. out/
+
+          # 5. Deep sync the .next directory metadata
+          # Ensure all manifests and chunks are present in their original relative structure
+          echo "Performing deep sync of .next metadata..."
+          mkdir -p out/.next/server
+          cp -r .next/. out/.next/ 2>/dev/null || true
+          # FIX: Ensure server directory treats internal .js as ESM if needed
+          echo '{"type": "module"}' > out/.next/server/package.json
+
+          # 6. FORCE SHARP ARM64 BINARIES (ensure they survive the merge)
+          cd out
           if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
             npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
             if [ ! -d "node_modules/@img/sharp-linux-arm64" ]; then
@@ -111,13 +110,12 @@ jobs:
             fi
           fi
 
-          # 6. Cleanup and script handling
+          # 7. Final assets and cleanup
+          cp -r ../public/. ./public/ 2>/dev/null || true
           rm -f .npmrc package.json.npm
           cd ..
 
-          # 7. Handle migrations and server launcher
-          # We provide BOTH startServer.js and startServer.cjs to ensure maximum compatibility
-          # with different deployment environments (some might hardcode .js)
+          # 8. Handle migrations and server launcher
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
