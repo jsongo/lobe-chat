@@ -1,6 +1,29 @@
 [
   {
     "children": {
+      "improvements": ["Refactor database schema."]
+    },
+    "date": "2025-12-20",
+    "version": "2.0.0-next.174"
+  },
+  {
+    "children": {
+      "fixes": [
+        "Request to gpt5 series should not with top_p, temperature when reasoning effort is not none."
+      ]
+    },
+    "date": "2025-12-16",
+    "version": "2.0.0-next.173"
+  },
+  {
+    "children": {
+      "improvements": ["Update i18n."]
+    },
+    "date": "2025-12-15",
+    "version": "2.0.0-next.172"
+  },
+  {
+    "children": {
       "improvements": ["Update GPT-5.2 models."]
     },
     "date": "2025-12-14",
