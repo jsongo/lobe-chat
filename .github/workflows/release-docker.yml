@@ -80,23 +80,16 @@ jobs:
           cp -r .next/standalone/. out/
 
           # IMPORTANT: Perform a deep sync of the .next directory
-          # The standalone output often misses critical metadata files (manifests)
-          # and chunks needed for runtime. We sync everything EXCEPT the cache.
-          echo "Syncing full .next metadata and chunks into standalone..."
-          mkdir -p out/.next/server
-          # Copy contents of .next into out/.next, avoiding overwriting with empty dirs
-          cp -r .next/server/. out/.next/server/ 2>/dev/null || true
-          cp .next/*.json out/.next/ 2>/dev/null || true
+          # We sync the ENTIRE .next directory to ensure no manifests or chunks are missing.
+          # This is the most robust way to avoid "Manifests singleton not initialized" errors.
+          echo "Performing full .next directory sync..."
+          mkdir -p out/.next
+          cp -r .next/. out/.next/ 2>/dev/null || true
 
-          # FIX: Handle entry points if package.json has type:module
-          # If server.js is CJS but package.json is ESM, we might need to rename it
-          # However, Next.js standalone server.js is usually compatible or we can use --input-type
-          # A safer way is to ensure all .js in .next/server are treated as ESM if they contain 'export'
+          # FIX: Ensure Next.js internal files are treated as ESM if they use export
           echo '{"type": "module"}' > out/.next/server/package.json
 
-          # Static assets
-          mkdir -p out/.next/static
-          cp -r .next/static/. out/.next/static/
+          # Static assets (redundant but safe after the full sync)
           cp -r public/. out/public/
 
           # 3. Prepare merged package.json for npm
@@ -104,34 +97,31 @@ jobs:
           node scripts/prepare-npm-pkg.mjs
           cp package.json.npm out/package.json
 
-          # 4. Install/Update production dependencies in the final directory
-          # This ensures that any missing prod deps (like pg or sharp) are present
+          # 4. Install production dependencies
           cd out
           echo "registry=https://registry.npmjs.org/" > .npmrc
-          # Explicitly include sharp and canvas polyfills for PDF/image processing
           npm install sharp @napi-rs/canvas --omit=dev --no-package-lock --legacy-peer-deps --no-audit --no-fund
 
           # 5. FORCE SHARP ARM64 BINARIES
           if [ "${{ matrix.platform }}" = "linux/arm64" ]; then
             npm install @img/sharp-linux-arm64 --no-save --force --legacy-peer-deps
-            # Verify sharp binaries are present
             if [ ! -d "node_modules/@img/sharp-linux-arm64" ]; then
               echo "❌ Error: @img/sharp-linux-arm64 was not installed correctly!"
               exit 1
             fi
           fi
 
-          # 6. Cleanup build-only files in 'out'
+          # 6. Cleanup and script handling
           rm -f .npmrc package.json.npm
-
           cd ..
 
-          # 7. Handle migrations and scripts
+          # 7. Handle migrations and server launcher
+          # We rename startServer.js to .cjs to avoid conflicts with "type": "module" in package.json
           mkdir -p out/migrations
           cp -r packages/database/migrations/. out/migrations/
           cp scripts/migrateServerDB/docker.cjs out/
           cp scripts/migrateServerDB/errorHint.js out/
-          cp scripts/serverLauncher/startServer.js out/
+          cp scripts/serverLauncher/startServer.js out/startServer.cjs
 
           # 7. Final cleanup of Docker context
           echo "*" > .dockerignore

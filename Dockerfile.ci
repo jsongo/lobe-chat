@@ -67,4 +67,4 @@ ENV NODE_ENV="production" \
 USER 1001
 EXPOSE 3210/tcp
 ENTRYPOINT ["/bin/node"]
-CMD ["/app/startServer.js"]
+CMD ["/app/startServer.cjs"]
