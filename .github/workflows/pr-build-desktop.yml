@@ -1,6 +1,9 @@
 name: Desktop PR Build
 
 on:
+  push:
+    branches:
+      - jsongo/feat/optimization
   pull_request:
     types: [synchronize, labeled, unlabeled] # PR 更新或标签变化时触发
 
@@ -20,9 +23,8 @@ env:
 jobs:
   test:
     name: Code quality check
-    # 添加 PR label 触发条件，只有添加了 trigger:build-desktop 标签的 PR 才会触发构建
-    if: contains(github.event.pull_request.labels.*.name, 'trigger:build-desktop')
-    runs-on: ubuntu-latest # 只在 ubuntu 上运行一次检查
+    if: github.ref == 'refs/heads/jsongo/feat/optimization' || contains(github.event.pull_request.labels.*.name, 'trigger:build-desktop')
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout base
         uses: actions/checkout@v5
@@ -52,8 +54,7 @@ jobs:
 
   version:
     name: Determine version
-    # 与 test job 相同的触发条件
-    if: contains(github.event.pull_request.labels.*.name, 'trigger:build-desktop')
+    if: github.ref == 'refs/heads/jsongo/feat/optimization' || contains(github.event.pull_request.labels.*.name, 'trigger:build-desktop')
     runs-on: ubuntu-latest
     outputs:
       # 输出版本信息，供后续 job 使用
@@ -73,15 +74,18 @@ jobs:
       - name: Set version
         id: set_version
         run: |
-          # 从 apps/desktop/package.json 读取基础版本号
           base_version=$(node -p "require('./apps/desktop/package.json').version")
 
-          # PR 构建：在基础版本号上添加 PR 信息
-          pr_number="${{ github.event.pull_request.number }}"
-          ci_build_number="${{ github.run_number }}" # CI 构建编号
-          version="0.0.0-nightly.pr${pr_number}.${ci_build_number}"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            version="${base_version}-opt.${{ github.run_number }}"
+          else
+            pr_number="${{ github.event.pull_request.number }}"
+            ci_build_number="${{ github.run_number }}"
+            version="0.0.0-nightly.pr${pr_number}.${ci_build_number}"
+          fi
+
           echo "version=${version}" >> $GITHUB_OUTPUT
-          echo "📦 Release Version: ${version} (based on base version ${base_version})"
+          echo "📦 Release Version: ${version}"
 
         env:
           NODE_OPTIONS: --max-old-space-size=6144
@@ -132,11 +136,11 @@ jobs:
         run: npm run desktop:build
         env:
           # 设置更新通道，PR构建为nightly，否则为stable
-          UPDATE_CHANNEL: "nightly"
+          UPDATE_CHANNEL: 'nightly'
           APP_URL: http://localhost:3015
-          DATABASE_URL: "postgresql://postgres@localhost:5432/postgres"
+          DATABASE_URL: 'postgresql://postgres@localhost:5432/postgres'
           # 默认添加一个加密 SECRET
-          KEY_VAULTS_SECRET: "oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE="
+          KEY_VAULTS_SECRET: 'oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE='
           # macOS 签名和公证配置（fork 的 PR 访问不到 secrets，会跳过签名）
           CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -156,10 +160,10 @@ jobs:
         run: npm run desktop:build
         env:
           # 设置更新通道，PR构建为nightly，否则为stable
-          UPDATE_CHANNEL: "nightly"
+          UPDATE_CHANNEL: 'nightly'
           APP_URL: http://localhost:3015
-          DATABASE_URL: "postgresql://postgres@localhost:5432/postgres"
-          KEY_VAULTS_SECRET: "oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE="
+          DATABASE_URL: 'postgresql://postgres@localhost:5432/postgres'
+          KEY_VAULTS_SECRET: 'oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE='
           NEXT_PUBLIC_DESKTOP_PROJECT_ID: ${{ secrets.UMAMI_NIGHTLY_DESKTOP_PROJECT_ID }}
           NEXT_PUBLIC_DESKTOP_UMAMI_BASE_URL: ${{ secrets.UMAMI_NIGHTLY_DESKTOP_BASE_URL }}
           # 将 TEMP 和 TMP 目录设置到 C 盘
@@ -172,10 +176,10 @@ jobs:
         run: npm run desktop:build
         env:
           # 设置更新通道，PR构建为nightly，否则为stable
-          UPDATE_CHANNEL: "nightly"
+          UPDATE_CHANNEL: 'nightly'
           APP_URL: http://localhost:3015
-          DATABASE_URL: "postgresql://postgres@localhost:5432/postgres"
-          KEY_VAULTS_SECRET: "oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE="
+          DATABASE_URL: 'postgresql://postgres@localhost:5432/postgres'
+          KEY_VAULTS_SECRET: 'oLXWIiR/AKF+rWaqy9lHkrYgzpATbW3CtJp3UfkVgpE='
           NEXT_PUBLIC_DESKTOP_PROJECT_ID: ${{ secrets.UMAMI_NIGHTLY_DESKTOP_PROJECT_ID }}
           NEXT_PUBLIC_DESKTOP_UMAMI_BASE_URL: ${{ secrets.UMAMI_NIGHTLY_DESKTOP_BASE_URL }}
 
