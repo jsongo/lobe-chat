@@ -15,11 +15,10 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REGISTRY_IMAGE: lobehub/lobehub
+  REGISTRY_IMAGE: jsongo/lobehub
 
 jobs:
   build:
-
     strategy:
       matrix:
         include:
