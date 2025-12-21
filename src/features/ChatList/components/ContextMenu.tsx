@@ -7,6 +7,7 @@ import { Dropdown, type MenuProps } from 'antd';
 import { App } from 'antd';
 import { createStyles } from 'antd-style';
 import isEqual from 'fast-deep-equal';
+import dynamic from 'next/dynamic';
 import {
   ComponentType,
   ReactNode,
@@ -31,7 +32,10 @@ import { useSessionStore } from '@/store/session';
 import { sessionSelectors } from '@/store/session/selectors';
 
 import { useChatListActionsBar } from '../hooks/useChatListActionsBar';
-import ShareMessageModal from './ShareMessageModal';
+
+const ShareMessageModal = dynamic(() => import('./ShareMessageModal'), {
+  ssr: false,
+});
 
 interface ActionMenuItem extends ActionIconGroupItemType {
   children?: { key: string; label: ReactNode }[];

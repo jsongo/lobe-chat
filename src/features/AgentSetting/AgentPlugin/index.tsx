@@ -4,15 +4,15 @@ import { Avatar, Button, Form, type FormGroupItemType, Tag, Tooltip } from '@lob
 import { Empty, Space, Switch } from 'antd';
 import isEqual from 'fast-deep-equal';
 import { LucideTrash2, Store } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import dynamic from 'next/dynamic';
 import { memo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Center, Flexbox } from 'react-layout-kit';
+import { Link, useNavigate } from 'react-router-dom';
 
 import PluginAvatar from '@/components/Plugins/PluginAvatar';
 import PluginTag from '@/components/Plugins/PluginTag';
 import { FORM_STYLE } from '@/const/layoutTokens';
-import PluginStore from '@/features/PluginStore';
 import { useFetchInstalledPlugins } from '@/hooks/useFetchInstalledPlugins';
 import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
 import { pluginHelpers, useToolStore } from '@/store/tool';
@@ -23,6 +23,10 @@ import AddPluginButton from './AddPluginButton';
 import LoadingList from './LoadingList';
 import LocalPluginItem from './LocalPluginItem';
 import PluginAction from './PluginAction';
+
+const PluginStore = dynamic(() => import('@/features/PluginStore'), {
+  ssr: false,
+});
 
 const AgentPlugin = memo(() => {
   const { t } = useTranslation('setting');
