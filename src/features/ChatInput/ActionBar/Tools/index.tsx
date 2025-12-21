@@ -1,9 +1,9 @@
 import { Segmented } from '@lobehub/ui';
 import { Blocks } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { Suspense, memo, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import PluginStore from '@/features/PluginStore';
 import { useModelSupportToolUse } from '@/hooks/useModelSupportToolUse';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
@@ -15,6 +15,10 @@ import {
 
 import Action from '../components/Action';
 import { useControls } from './useControls';
+
+const PluginStore = dynamic(() => import('@/features/PluginStore'), {
+  ssr: false,
+});
 
 type TabType = 'all' | 'installed';
 

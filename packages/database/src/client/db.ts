@@ -37,6 +37,7 @@ export class DatabaseManager {
   private initPromise: Promise<DrizzleInstance> | null = null;
   private callbacks?: DatabaseLoadingCallbacks;
   private isLocalDBSchemaSynced = false;
+  private isFirstInit = true; // Track if this is the first initialization
 
   // CDN configuration
   private static WASM_CDN_URL =
@@ -216,6 +217,31 @@ export class DatabaseManager {
     this.initPromise = (async () => {
       try {
         if (this.dbInstance) return this.dbInstance;
+
+        // Delay initialization on first load to avoid blocking main thread
+        // This significantly improves Time to Interactive (TTI)
+        if (this.isFirstInit) {
+          this.isFirstInit = false;
+          console.info('⏰ PGlite: Delaying initialization to avoid blocking main thread...');
+
+          // Use requestIdleCallback if available, otherwise setTimeout
+          await new Promise<void>((resolve) => {
+            if (typeof requestIdleCallback !== 'undefined') {
+              requestIdleCallback(
+                () => {
+                  console.info('✨ PGlite: Starting initialization in idle time');
+                  resolve();
+                },
+                { timeout: 2000 },
+              ); // Max wait 2s
+            } else {
+              setTimeout(() => {
+                console.info('✨ PGlite: Starting initialization after delay');
+                resolve();
+              }, 1000); // 1s delay fallback
+            }
+          });
+        }
 
         const time = Date.now();
         // Initialize database
