@@ -20,11 +20,11 @@ import {
 } from './types';
 
 const log = debug('lobe-mcp:client');
-// MCP tool call timeout (milliseconds), configurable via the environment variable MCP_TOOL_TIMEOUT, default is 60000
-// Parse MCP_TOOL_TIMEOUT, only use if it's a valid positive number, otherwise fallback to default 60000
+// MCP tool call timeout (milliseconds), configurable via the environment variable MCP_TOOL_TIMEOUT, default is 300000
+// Parse MCP_TOOL_TIMEOUT, only use if it's a valid positive number, otherwise fallback to default 300000
 const MCP_TOOL_TIMEOUT = (() => {
   const val = Number(process.env.MCP_TOOL_TIMEOUT);
-  return Number.isFinite(val) && val > 0 ? val : 60_000;
+  return Number.isFinite(val) && val > 0 ? val : 300_000;
 })();
 
 /**

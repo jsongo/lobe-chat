@@ -1,4 +1,4 @@
-import { createTRPCClient, httpBatchLink } from '@trpc/client';
+import { createTRPCClient, httpLink } from '@trpc/client';
 import superjson from 'superjson';
 
 import { isDesktop } from '@/const/version';
@@ -7,7 +7,7 @@ import { fetchWithDesktopRemoteRPC } from '@/utils/electron/desktopRemoteRPCFetc
 
 export const toolsClient = createTRPCClient<ToolsRouter>({
   links: [
-    httpBatchLink({
+    httpLink({
       fetch: isDesktop
         ? // eslint-disable-next-line no-undef
           (input, init) => fetchWithDesktopRemoteRPC(input as string, init as RequestInit)
@@ -18,7 +18,6 @@ export const toolsClient = createTRPCClient<ToolsRouter>({
 
         return createHeaderWithAuth();
       },
-      maxURLLength: 2083,
       transformer: superjson,
       url: '/trpc/tools',
     }),
