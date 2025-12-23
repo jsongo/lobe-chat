@@ -280,11 +280,10 @@ jobs:
 
   publish-pr:
     needs: [merge-mac-files, version]
-    name: Publish PR Build
-    # 只为非 fork 的 PR 发布（fork 的 PR 没有写权限）
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    name: Publish Build Result
+    # 允许在指定优化分支推送时或非 fork 的 PR 时运行
+    if: github.ref == 'refs/heads/jsongo/feat/optimization' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    # Grant write permissions for creating release and commenting on PR
     permissions:
       contents: write
       pull-requests: write
@@ -302,35 +301,12 @@ jobs:
           name: merged-release-pr
           path: release
 
-      # 列出所有构建产物
-      - name: List final artifacts
-        run: ls -R release
-
-      # 生成PR发布描述
-      - name: Generate PR Release Body
-        id: pr_release_body
-        uses: actions/github-script@v8
-        with:
-          result-encoding: string
-          script: |
-            const generateReleaseBody = require('${{ github.workspace }}/.github/scripts/pr-release-body.js');
-
-            const body = generateReleaseBody({
-              version: "${{ needs.version.outputs.version }}",
-              prNumber: "${{ github.event.pull_request.number }}",
-              branch: "${{ github.head_ref }}"
-            });
-
-            return body;
-
-      - name: Create Temporary Release for PR
+      - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
-          name: PR Build v${{ needs.version.outputs.version }}
+          name: Build v${{ needs.version.outputs.version }}
           tag_name: v${{ needs.version.outputs.version }}
-          #          tag_name: pr-build-${{ github.event.pull_request.number }}-${{ github.sha }}
-          body: ${{ steps.pr_release_body.outputs.result }}
           draft: false
           prerelease: true
           files: |
@@ -346,8 +322,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 在 PR 上添加评论，包含构建信息和下载链接
+      # 如果是 PR，则添加评论
       - name: Comment on PR
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -898,7 +898,7 @@ export const nanoBananaProParameters: ModelParamsSchema = {
 const googleImageModels: AIImageModelCard[] = [
   {
     displayName: 'Nano Banana Pro',
-    id: 'gemini-3-pro-image-preview:image',
+    id: 'gemini-3-pro-image-preview',
     type: 'image',
     enabled: true,
     description:

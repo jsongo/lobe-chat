@@ -2,7 +2,7 @@
 
 import { enableNextAuth } from '@lobechat/const';
 import { useRouter } from 'next/navigation';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createStoreUpdater } from 'zustand-utils';
 
@@ -61,9 +61,28 @@ const StoreInitialization = memo(() => {
   const isLoginOnInit = Boolean(enableNextAuth ? isSignedIn : isLogin);
   const isSyncActive = useElectronStore((s) => electronSyncSelectors.isSyncActive(s));
 
+  const useInitAgentStore = useAgentStore((s) => s.useInitInboxAgentStore);
+  const useInitAiProviderKeyVaults = useAiInfraStore((s) => s.useFetchAiProviderRuntimeState);
+  const useInitUserState = useUserStore((s) => s.useInitUserState);
+
+  // Use useMemo to ensure defaultAgentConfig reference stability
+  const defaultAgentConfig = useMemo(
+    () => serverConfig.defaultAgent?.config,
+    [serverConfig.defaultAgent?.config],
+  );
+
+  useInitAgentStore(isLoginOnInit, defaultAgentConfig);
+  useInitAiProviderKeyVaults(isLoginOnInit, isSyncActive);
+  useInitUserState(isLoginOnInit, serverConfig, {
+    onSuccess: (state) => {
+      if (state.isOnboard === false) {
+        router.push('/onboard');
+      }
+    },
+  });
+
   // ============ Non-critical initialization (deferred) ============
   // Track whether non-critical initialization should proceed
-  const [shouldInitNonCritical, setShouldInitNonCritical] = useState(false);
   const nonCriticalInitScheduled = useRef(false);
 
   useEffect(() => {
@@ -73,7 +92,7 @@ const StoreInitialization = memo(() => {
     // Delay non-critical store initialization to avoid blocking main thread
     const scheduleNonCriticalInit = () => {
       console.debug('⏰ Store: Scheduling non-critical stores initialization...');
-      setShouldInitNonCritical(true);
+      // TODO: Add non-critical stores initialization here
       console.debug('✨ Store: Non-critical stores initialization enabled');
     };
 
@@ -84,29 +103,6 @@ const StoreInitialization = memo(() => {
       setTimeout(scheduleNonCriticalInit, 500);
     }
   }, []);
-
-  // These hooks need to be called unconditionally due to React rules
-  // But we control whether they actually execute by passing conditional parameters
-  const useInitAgentStore = useAgentStore((s) => s.useInitInboxAgentStore);
-  const useInitAiProviderKeyVaults = useAiInfraStore((s) => s.useFetchAiProviderRuntimeState);
-  const useInitUserState = useUserStore((s) => s.useInitUserState);
-
-  // Only pass parameters to trigger initialization after delay
-  useInitAgentStore(
-    shouldInitNonCritical ? isLoginOnInit : false,
-    shouldInitNonCritical ? serverConfig.defaultAgent?.config : undefined,
-  );
-  useInitAiProviderKeyVaults(
-    shouldInitNonCritical ? isLoginOnInit : false,
-    shouldInitNonCritical ? isSyncActive : false,
-  );
-  useInitUserState(shouldInitNonCritical ? isLoginOnInit : false, serverConfig, {
-    onSuccess: (state) => {
-      if (state.isOnboard === false) {
-        router.push('/onboard');
-      }
-    },
-  });
 
   return null;
 });
