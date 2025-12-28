@@ -30,7 +30,9 @@ const SessionHydration = memo(() => {
   useEffect(() => {
     const unsubscribe = useSessionStore.subscribe(
       (s) => s.activeId,
-      (state) => {
+      (state, prevState) => {
+        if (state === prevState || state === session) return;
+
         switchTopic();
         setSession(state);
       },
