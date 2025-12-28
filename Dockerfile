@@ -82,7 +82,7 @@ COPY package.json pnpm-workspace.yaml ./
 COPY .npmrc ./
 COPY packages ./packages
 # bring in desktop workspace manifest so pnpm can resolve it
-COPY apps/desktop/src/main/package.json ./apps/desktop/src/main/package.json
+COPY apps/desktop/package.json ./apps/desktop/package.json
 
 RUN <<'EOF'
 set -e
