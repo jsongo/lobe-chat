@@ -3,6 +3,9 @@ permissions:
   contents: read
 
 on:
+  push:
+    branches:
+      - fixed
   workflow_dispatch:
   release:
     types: [published]
@@ -25,6 +28,9 @@ jobs:
           - platform: linux/arm64
             os: ubuntu-24.04-arm
     runs-on: ${{ matrix.os }}
+  push:
+    branches:
+      - fixed
     name: Build ${{ matrix.platform }} Image
     steps:
       - name: Prepare
@@ -91,6 +97,9 @@ jobs:
     name: Merge
     needs: build
     runs-on: ubuntu-latest
+  push:
+    branches:
+      - fixed
     steps:
       - name: Checkout base
         uses: actions/checkout@v5
