@@ -94,7 +94,6 @@ fi
 export COREPACK_NPM_REGISTRY=$(npm config get registry | sed 's/\/$//')
 npm i -g corepack@latest
 corepack enable
-corepack use $(sed -n 's/.*"packageManager": "\(.*\)".*/\1/p' package.json)
 pnpm i
 mkdir -p /deps
 cd /deps
